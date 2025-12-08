@@ -847,9 +847,7 @@ function install_application() {
 	fi
 
 	# Preliminary requirements
-	package_install curl sudo python3-venv default-jdk
-
-	java -version
+	package_install curl sudo python3-venv
 
 	if [ "$FIREWALL" == "1" ]; then
 		if [ "$(get_enabled_firewall)" == "none" ]; then
@@ -898,11 +896,14 @@ Sockets=zomboid.socket
 StandardInput=socket
 StandardOutput=journal
 StandardError=journal
-WorkingDirectory=$GAME_DIR/AppFiles
+WorkingDirectory=${GAME_DIR}/AppFiles
 Environment=XDG_RUNTIME_DIR=/run/user/$(id -u $GAME_USER)
+Environment=PATH="${GAME_DIR}/AppFiles/jre64/bin:\$PATH"
+Environment=LD_LIBRARY_PATH="${GAME_DIR}/AppFiles/linux64:${GAME_DIR}/AppFiles/natives:${GAME_DIR}/AppFiles:${GAME_DIR}/AppFiles/jre64/lib/amd64:\${LD_LIBRARY_PATH}"
+Environment=LD_PRELOAD="\${LD_PRELOAD}:libjsig.so"
 # Only required for games which utilize Proton
 #Environment="STEAM_COMPAT_CLIENT_INSTALL_PATH=$STEAM_DIR"
-ExecStart=$GAME_DIR/AppFiles/Game-Executable.bin
+ExecStart=$GAME_DIR/AppFiles/ProjectZomboid64
 ExecStop=$GAME_DIR/manage.py --pre-stop --service ${GAME_SERVICE}
 ExecStartPost=$GAME_DIR/manage.py --post-start --service ${GAME_SERVICE}
 Restart=on-failure
@@ -915,10 +916,14 @@ EOF
 	cat > /etc/systemd/system/${GAME_SERVICE}.socket <<EOF
 [Unit]
 # DYNAMICALLY GENERATED FILE! Edit at your own risk
+BindsTo=zomboid.service
 
 [Socket]
 ListenFIFO=/var/run/$GAME_SERVICE.socket
 Service=$GAME_SERVICE.service
+RemoveOnStop=true
+SocketMode=0660
+SocketUser=$GAME_USER
 EOF
     systemctl daemon-reload
 

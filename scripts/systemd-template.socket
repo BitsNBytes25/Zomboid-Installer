@@ -1,7 +1,11 @@
 [Unit]
 # DYNAMICALLY GENERATED FILE! Edit at your own risk
 # compile:noescape
+BindsTo=zomboid.service
 
 [Socket]
 ListenFIFO=/var/run/$GAME_SERVICE.socket
 Service=$GAME_SERVICE.service
+RemoveOnStop=true
+SocketMode=0660
+SocketUser=$GAME_USER
