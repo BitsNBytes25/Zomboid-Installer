@@ -8,10 +8,10 @@
 # @AUTHOR  Charlie Powell <cdp1337@bitsnbytes.dev>
 # @CATEGORY Game Server
 # @TRMM-TIMEOUT 600
-# @WARLOCK-TITLE Game Name
-# @WARLOCK-IMAGE media/some-game-image.webp
-# @WARLOCK-ICON media/some-game-icon.webp
-# @WARLOCK-THUMBNAIL media/some-game-thumbnail.webp
+# @WARLOCK-TITLE Zomboid
+# @WARLOCK-IMAGE media/zomboid-1920x1080.webp
+# @WARLOCK-ICON media/zomboid-128x128.webp
+# @WARLOCK-THUMBNAIL media/zomboid-640x360.webp
 #
 # Supports:
 #   Debian 12, 13

@@ -1,5 +1,5 @@
 - guid: dd73094b-b84e-475b-b47a-1a97b5b2d850
-  title: Game Name
+  title: Zomboid
   source: github
   repo: BitsNBytes25/Zomboid-Installer
   installer: dist/installer.sh
@@ -13,7 +13,7 @@
     - "--dir=<src> - Use a custom installation directory instead of the default (optional)"
     - "--skip-firewall  - Do not install or configure a system firewall"
     - "--non-interactive  - Run the installer in non-interactive mode (useful for scripted installs)"
-  image: media/some-game-image.webp
-  icon: media/some-game-icon.webp
-  thumbnail: media/some-game-thumbnail.webp
+  image: media/zomboid-1920x1080.webp
+  icon: media/zomboid-128x128.webp
+  thumbnail: media/zomboid-640x360.webp
 
