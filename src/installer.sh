@@ -38,14 +38,14 @@
 
 # Name of the game (used to create the directory)
 INSTALLER_VERSION="v20251127~DEV"
-GAME="GameName"
-GAME_DESC="Game Dedicated Server"
-REPO="your-github/your-repo"
-WARLOCK_GUID="replace-with-guid-once-compiled"
-STEAM_ID="123456789"
+GAME="Zomboid"
+GAME_DESC="Project Zomboid Dedicated Server"
+REPO="BitsNBytes25/Zomboid-Installer"
+WARLOCK_GUID="dd73094b-b84e-475b-b47a-1a97b5b2d850"
+STEAM_ID="380870"
 GAME_USER="steam"
 GAME_DIR="/home/${GAME_USER}/${GAME}"
-GAME_SERVICE="your-game-server"
+GAME_SERVICE="zomboid"
 
 # compile:usage
 # compile:argparse
@@ -58,6 +58,7 @@ GAME_SERVICE="your-game-server"
 # scriptlet:bz_eval_tui/print_header.sh
 # scriptlet:ufw/install.sh
 # scriptlet:warlock/install_warlock_manager.sh
+# scriptlet:steam/install-steamcmd.sh
 
 print_header "$GAME_DESC *unofficial* Installer ${INSTALLER_VERSION}"
 
@@ -87,7 +88,9 @@ function install_application() {
 	fi
 
 	# Preliminary requirements
-	package_install curl sudo python3-venv
+	package_install curl sudo python3-venv default-jdk
+
+	java -version
 
 	if [ "$FIREWALL" == "1" ]; then
 		if [ "$(get_enabled_firewall)" == "none" ]; then
@@ -98,11 +101,7 @@ function install_application() {
 
 	[ -e "$GAME_DIR/AppFiles" ] || sudo -u $GAME_USER mkdir -p "$GAME_DIR/AppFiles"
 
-
-	# To download a game with steamcmd, include the following header
-	#  # scriptlet:steam/install-steamcmd.sh
-	# and use 
-	#  install_steamcmd
+	install_steamcmd
 	
 	# Install the management script
 	install_warlock_manager "$REPO" "$INSTALLER_VERSION"
@@ -127,6 +126,9 @@ function install_application() {
 	# Install system service file to be loaded by systemd
     cat > /etc/systemd/system/${GAME_SERVICE}.service <<EOF
 # script:systemd-template.service
+EOF
+	cat > /etc/systemd/system/${GAME_SERVICE}.socket <<EOF
+# script:systemd-template.socket
 EOF
     systemctl daemon-reload
 

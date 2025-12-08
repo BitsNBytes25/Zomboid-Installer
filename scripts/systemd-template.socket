@@ -1,0 +1,7 @@
+[Unit]
+# DYNAMICALLY GENERATED FILE! Edit at your own risk
+# compile:noescape
+
+[Socket]
+ListenFIFO=/var/run/$GAME_SERVICE.socket
+Service=$GAME_SERVICE.service

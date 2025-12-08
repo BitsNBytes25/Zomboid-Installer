@@ -9,6 +9,10 @@ Type=simple
 LimitNOFILE=10000
 User=$GAME_USER
 Group=$GAME_USER
+Sockets=zomboid.socket
+StandardInput=socket
+StandardOutput=journal
+StandardError=journal
 WorkingDirectory=$GAME_DIR/AppFiles
 Environment=XDG_RUNTIME_DIR=/run/user/$(id -u $GAME_USER)
 # Only required for games which utilize Proton
