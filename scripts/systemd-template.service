@@ -15,9 +15,9 @@ StandardOutput=journal
 StandardError=journal
 WorkingDirectory=${GAME_DIR}/AppFiles
 Environment=XDG_RUNTIME_DIR=/run/user/$(id -u $GAME_USER)
-Environment=PATH="${GAME_DIR}/AppFiles/jre64/bin:\$PATH"
-Environment=LD_LIBRARY_PATH="${GAME_DIR}/AppFiles/linux64:${GAME_DIR}/AppFiles/natives:${GAME_DIR}/AppFiles:${GAME_DIR}/AppFiles/jre64/lib/amd64:\${LD_LIBRARY_PATH}"
-Environment=LD_PRELOAD="\${LD_PRELOAD}:libjsig.so"
+Environment=PATH="${GAME_DIR}/AppFiles/jre64/bin:/usr/bin:/bin"
+Environment=LD_LIBRARY_PATH="${GAME_DIR}/AppFiles/linux64:${GAME_DIR}/AppFiles/natives:${GAME_DIR}/AppFiles:${GAME_DIR}/AppFiles/jre64/lib/server"
+Environment=LD_PRELOAD="libjsig.so"
 # Only required for games which utilize Proton
 #Environment="STEAM_COMPAT_CLIENT_INSTALL_PATH=$STEAM_DIR"
 ExecStart=$GAME_DIR/AppFiles/ProjectZomboid64

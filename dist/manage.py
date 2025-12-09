@@ -29,6 +29,9 @@ import datetime
 import json
 import shutil
 import re
+from rcon.source import Client
+from rcon import SessionTimeout
+from rcon.exceptions import WrongPassword
 import configparser
 import argparse
 
@@ -1285,6 +1288,8 @@ class SteamApp(BaseApp):
 		return res.returncode == 0
 # Game services are usually either an RCON, HTTP, or base type service.
 # Include the necessary type and remove the rest.
+# from scriptlets.warlock.base_service import *
+# from scriptlets.warlock.http_service import *
 
 
 class BaseService:
@@ -1984,8 +1989,62 @@ class BaseService:
 
 		self.stop()
 		self.start()
-# from scriptlets.warlock.http_service import *
-# from scriptlets.warlock.rcon_service import *
+
+
+class RCONService(BaseService):
+	def _api_cmd(self, cmd) -> Union[None,str]:
+		"""
+		Execute a raw command with RCON and return the result
+
+		:param cmd:
+		:return: None if RCON not available, or the result of the command
+		"""
+		if not (self.is_running() or self.is_starting() or self.is_stopping()):
+			# If service is not running, don't even try to connect.
+			return None
+
+		if not self.is_api_enabled():
+			# RCON is not available due to settings
+			return None
+
+		# Safety checks to ensure we have the necessary info, (regardless of is_api_enabled)
+		port = self.get_api_port()
+		if port is None:
+			print("RCON port is not set!  Please populate get_api_port definition.", file=sys.stderr)
+			return None
+
+		password = self.get_api_password()
+		if password is None:
+			print("RCON password is not set!  Please populate get_api_password definition.", file=sys.stderr)
+			return None
+
+		try:
+			with Client('127.0.0.1', port, passwd=password, timeout=2) as client:
+				return client.run(cmd).strip()
+		except Exception as e:
+			print(str(e), file=sys.stderr)
+			return None
+
+	def is_api_enabled(self) -> bool:
+		"""
+		Check if RCON is enabled for this service
+		:return:
+		"""
+		pass
+
+	def get_api_port(self) -> int:
+		"""
+		Get the RCON port from the service configuration
+		:return:
+		"""
+		pass
+
+	def get_api_password(self) -> str:
+		"""
+		Get the RCON password from the service configuration
+		:return:
+		"""
+		pass
 
 
 class BaseConfig:
@@ -2313,122 +2372,7 @@ class INIConfig(BaseConfig):
 					os.chown(self.path, uid, gid)
 					break
 				check_path = os.path.dirname(check_path)
-
-class PropertiesConfig(BaseConfig):
-	"""
-	Configuration handler for Java-style .properties files
-	"""
-
-	def __init__(self, group_name: str, path: str):
-		super().__init__(group_name)
-		self.path = path
-		self.values = {}
-
-	def get_value(self, name: str) -> Union[str, int, bool]:
-		"""
-		Get a configuration option from the config
-
-		:param name: Name of the option
-		:return:
-		"""
-		if name not in self.options:
-			print('Invalid option: %s, not present in %s configuration!' % (name, os.path.basename(self.path)), file=sys.stderr)
-			return ''
-
-		key = self.options[name][1]
-		default = self.options[name][2]
-		val_type = self.options[name][3]
-		val = self.values.get(key, default)
-		return BaseConfig.convert_to_system_type(val, val_type)
-
-	def set_value(self, name: str, value: Union[str, int, bool]):
-		"""
-		Set a configuration option in the config
-
-		:param name: Name of the option
-		:param value: Value to save
-		:return:
-		"""
-		if name not in self.options:
-			print('Invalid option: %s, not present in %s configuration!' % (name, os.path.basename(self.path)), file=sys.stderr)
-			return
-
-		key = self.options[name][1]
-		val_type = self.options[name][3]
-		str_value = BaseConfig.convert_from_system_type(value, val_type)
-
-		self.values[key] = str_value
-
-	def has_value(self, name: str) -> bool:
-		"""
-		Check if a configuration option has been set
-
-		:param name: Name of the option
-		:return:
-		"""
-		if name not in self.options:
-			return False
-
-		key = self.options[name][1]
-		return self.values.get(key, '') != ''
-
-	def exists(self) -> bool:
-		"""
-		Check if the config file exists on disk
-		:return:
-		"""
-		return os.path.exists(self.path)
-
-	def load(self):
-		"""
-		Load the configuration file from disk
-		:return:
-		"""
-		if not os.path.exists(self.path):
-			# File does not exist, nothing to load
-			return
-
-		with open(self.path, 'r') as cfgfile:
-			for line in cfgfile:
-				line = line.strip()
-				if line == '' or line.startswith('#') or line.startswith('!'):
-					# Skip empty lines and comments
-					continue
-				if '=' in line:
-					key, value = line.split('=', 1)
-					key = key.strip()
-					value = value.strip()
-					# Un-escape characters
-					value = value.replace('\\:', ':')
-					self.values[key] = value
-				else:
-					# Handle lines without '=' as keys with empty values
-					key = line.strip()
-					self.values[key] = ''
-
-	def save(self):
-		"""
-		Save the configuration file back to disk
-		:return:
-		"""
-		with open(self.path, 'w') as cfgfile:
-			for key, value in self.values.items():
-				# Escape '%' characters that may be present
-				escaped_value = value.replace(':', '\\:')
-				cfgfile.write(f'{key}={escaped_value}\n')
-
-		# Change ownership to game user if running as root
-		if os.geteuid() == 0:
-			# Determine game user based on parent directories
-			check_path = os.path.dirname(self.path)
-			while check_path != '/' and check_path != '':
-				if os.path.exists(check_path):
-					stat_info = os.stat(check_path)
-					uid = stat_info.st_uid
-					gid = stat_info.st_gid
-					os.chown(self.path, uid, gid)
-					break
-				check_path = os.path.dirname(check_path)
+# from scriptlets.warlock.properties_config import *
 
 
 def menu_get_services(game):
@@ -2716,7 +2660,7 @@ class GameApp(SteamApp):
 		return os.path.join(here, 'AppFiles')
 
 
-class GameService(BaseService):
+class GameService(RCONService):
 	"""
 	Service definition and handler
 	"""
@@ -2729,7 +2673,7 @@ class GameService(BaseService):
 		self.service = service
 		self.game = game
 		self.configs = {
-			'server': PropertiesConfig('server', os.path.join(here, 'AppFiles/server.properties'))
+			'zomboid': INIConfig('zomboid', os.path.join(here, 'Server/servertest.ini'))
 		}
 		self.load()
 
@@ -2743,16 +2687,16 @@ class GameService(BaseService):
 		"""
 
 		# Special option actions
-		if option == 'Server Port':
+		if option == 'Default Port':
 			# Update firewall for game port change
 			if previous_value:
 				firewall_remove(int(previous_value), 'tcp')
-			firewall_allow(int(new_value), 'tcp', 'Allow %s game port' % self.game.desc)
-		elif option == 'Query Port':
+			firewall_allow(int(new_value), 'udp', 'Allow %s data port' % self.game.desc)
+		elif option == 'UDP Port':
 			# Update firewall for game port change
 			if previous_value:
 				firewall_remove(int(previous_value), 'udp')
-			firewall_allow(int(new_value), 'udp', 'Allow %s query port' % self.game.desc)
+			firewall_allow(int(new_value), 'udp', 'Allow %s game port' % self.game.desc)
 
 	def is_api_enabled(self) -> bool:
 		"""
@@ -2760,7 +2704,6 @@ class GameService(BaseService):
 		:return:
 		"""
 		return (
-			self.get_option_value('Enable RCON') and
 			self.get_option_value('RCON Port') != '' and
 			self.get_option_value('RCON Password') != ''
 		)
@@ -2808,14 +2751,14 @@ class GameService(BaseService):
 		Get the name of this game server instance
 		:return:
 		"""
-		return self.get_option_value('Level Name')
+		return self.get_option_value('Public Name')
 
 	def get_port(self) -> Union[int, None]:
 		"""
 		Get the primary port of the service, or None if not applicable
 		:return:
 		"""
-		return self.get_option_value('Server Port')
+		return self.get_option_value('Default Port')
 
 	def get_game_pid(self) -> int:
 		"""
@@ -2826,35 +2769,20 @@ class GameService(BaseService):
 		# For services that do not have a helper wrapper, it's the same as the process PID
 		return self.get_pid()
 
-		# For services that use a wrapper script, the actual game process will be different and needs looked up.
-		'''
-		# There's no quick way to get the game process PID from systemd,
-		# so use ps to find the process based on the map name
-		processes = subprocess.run([
-			'ps', 'axh', '-o', 'pid,cmd'
-		], stdout=subprocess.PIPE).stdout.decode().strip()
-		exe = os.path.join(here, 'AppFiles/Vein/Binaries/Linux/VeinServer-Linux-')
-		for line in processes.split('\n'):
-			pid, cmd = line.strip().split(' ', 1)
-			if cmd.startswith(exe):
-				return int(line.strip().split(' ')[0])
-		return 0
-		'''
-
 	def send_message(self, message: str):
 		"""
 		Send a message to all players via the game API
 		:param message:
 		:return:
 		"""
-		self._api_cmd('/say %s' % message)
+		self._api_cmd('/servermsg %s' % message)
 
 	def save_world(self):
 		"""
 		Force the game server to save the world via the game API
 		:return:
 		"""
-		self._api_cmd('save-all flush')
+		self._api_cmd('save')
 
 
 def menu_first_run(game: GameApp):
@@ -2872,15 +2800,49 @@ def menu_first_run(game: GameApp):
 
 	svc = game.get_services()[0]
 
-	svc.option_ensure_set('Level Name')
-	svc.option_ensure_set('Server Port')
-	svc.option_ensure_set('RCON Port')
+	if os.path.exists(os.path.join(here, 'Server', 'servertest.ini')):
+		# Service already registered
+		print('Game already setup, skipping first run')
+		return
+
+	random_password = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
+
+	# Start the service for the first time to generate default config files
+	# and to let the server prompt for the first run options.
+	with open(os.path.join(here, 'admin.passwd'), 'w') as f:
+		f.write(random_password)
+
+	print('Starting the server for initial setup...')
+	subprocess.Popen(['systemctl', 'start', svc.service])
+	time.sleep(10)
+
+	counter = 0
+	while counter < 240:
+		counter += 1
+		log = svc.get_latest_log_lines(1)
+
+		# The server prompts for admin password on first run
+		if 'Enter new administrator password:' in log or 'Confirm the password:' in log:
+			with open('/var/run/zomboid.socket', 'w') as f:
+				f.write(random_password + '\n')
+
+		if svc.is_running():
+			break
+
+		time.sleep(10)
+
+	print('First start finished, stopping game server...')
+	subprocess.Popen(['systemctl', 'stop', svc.service])
+	time.sleep(10)
+	svc.load()
+
+	# Allow default game ports
+	firewall_allow(int(svc.get_option_value('Default Port')), 'udp', 'Allow %s data port' % svc.game.desc)
+	firewall_allow(int(svc.get_option_value('UDP Port')), 'udp', 'Allow %s game port' % svc.game.desc)
 	if not svc.option_has_value('RCON Password'):
 		# Generate a random password for RCON
-		random_password = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
+
 		svc.set_option('RCON Password', random_password)
-	if not svc.option_has_value('Enable RCON'):
-		svc.set_option('Enable RCON', True)
 
 if __name__ == '__main__':
 	game = GameApp()

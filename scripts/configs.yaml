@@ -1,71 +1,3 @@
-game:
-  - name: APIPort
-    section: "/Script/Vein.VeinGameSession"
-    key: HTTPPort
-    default: ""
-    type: int
-    help: "The port for the server API. Leave blank to disable."
-  - name: Public
-    section: "/Script/Vein.VeinGameSession"
-    key: bPublic
-    default: "true"
-    type: bool
-    help: "Make the server publicly visible in server browsers."
-  - name: GamePort
-    section: URL
-    key: Port
-    default: "7777"
-    type: int
-    help: "The main port for game connections."
-  - name: MaxPlayers
-    section: "/Script/Engine.GameSession"
-    key: MaxPlayers
-    default: "16"
-    type: int
-    help: "Maximum number of players allowed on the server."
-  - name: ServerDescription
-    section: "/Script/Vein.VeinGameSession"
-    key: ServerDescription
-    default: "Short description of your server and your community"
-    type: text
-    help: "A brief description of your server that appears in server browsers."
-  - name: ServerName
-    section: "/Script/Vein.VeinGameSession"
-    key: ServerName
-    default: "My Vein Server"
-    type: str
-    help: "The name of your server as it appears in server browsers."
-  - name: ServerPassword
-    section: "/Script/Vein.VeinGameSession"
-    key: Password
-    default: ""
-    type: str
-    help: "Password required to join the server. Leave blank for no password."
-  - name: SteamQueryPort
-    section: OnlineSubsystemSteam
-    key: GameServerQueryPort
-    default: "27015"
-    type: int
-    help: "The Steam query port for server listing and queries."
-  - name: VACEnabled
-    section: OnlineSubsystemSteam
-    key: bVACEnabled
-    default: "false"
-    type: bool
-    help: "Enable Valve Anti-Cheat (VAC) on the server."
-engine:
-  - name: AISpawner
-    section: ConsoleVariables
-    key: vein.AISpawner.Enabled
-    default: "true"
-    type: bool
-    help: "Enable or disable AI spawners on the server."
-  - name: PVPEnabled
-    section: ConsoleVariables
-    key: vein.PvP
-    default: "true"
-    type: bool
-    help: "Enable or disable PvP mode on the server."
 manager:
   - name: Steam Branch
     section: Steam
@@ -75,7 +7,6 @@ manager:
     help: "The Steam branch to install the server from (e.g., stable, experimental)."
     options:
       - public
-      - experimental
   - name: Steam Branch Password
     section: Steam
     key: steam_branch_password
@@ -146,4 +77,701 @@ manager:
     section: Discord
     key: webhook
     type: str
+    default: ""
     help: "The webhook URL for sending server status updates to a Discord channel."
+zomboid:
+  - name: PVP
+    key: PVP
+    type: bool
+    default: true
+    help: "Players can hurt and kill other players"
+  - name: Pause When Empty
+    key: PauseEmpty
+    type: bool
+    default: true
+    help: "Game time stops when there are no players online"
+  - name: Global Chat Enabled
+    key: GlobalChat
+    type: bool
+    default: true
+    help: "Toggles global chat on or off."
+  - name: Chat Streams
+    key: ChatStreams
+    type: str
+    default: "s,r,a,w,y,sh,f,all"
+    help: "Comma-separated chat streams. Keep as a single string; parser will split on commas if needed."
+  - name: Open Server
+    key: Open
+    type: bool
+    default: true
+    help: "Clients may join without an account on the whitelist. If false, admins must create accounts."
+  - name: Server Welcome Message
+    key: ServerWelcomeMessage
+    type: str
+    default: "Welcome to Project Zomboid Multiplayer! <LINE> <LINE> To interact with the Chat panel: press Tab, T, or Enter. <LINE> <LINE> The Tab key will change the target stream of the message. <LINE> <LINE> Global Streams: /all <LINE> Local Streams: /say, /yell <LINE> Special Steams: /whisper, /safehouse, /faction. <LINE> <LINE> Press the Up arrow to cycle through your message history. Click the Gear icon to customize chat. <LINE> <LINE> Happy surviving!"
+    help: "First welcome message visible in chat. Supports <LINE> and <RGB:r,g,b> markers."
+  - name: Auto Create User In Whitelist
+    key: AutoCreateUserInWhiteList
+    type: bool
+    default: false
+    help: "Add unknown usernames to the whitelist when players join (only for Open=true servers)."
+  - name: Display User Name
+    key: DisplayUserName
+    type: bool
+    default: true
+    help: "Display usernames above player's heads in-game."
+  - name: Show First And Last Name
+    key: ShowFirstAndLastName
+    type: bool
+    default: false
+    help: "Display first & last name above player's heads."
+  - name: Spawn Point
+    key: SpawnPoint
+    type: str
+    default: "0,0,0"
+    help: "Force new players to spawn at specific x,y,z coordinates. Use '0,0,0' to ignore."
+  - name: Safety System
+    key: SafetySystem
+    type: bool
+    default: true
+    help: "Players can enter/leave PVP individually; governs when players can hurt each other."
+  - name: Show Safety Icon
+    key: ShowSafety
+    type: bool
+    default: true
+    help: "Display a skull icon over the head of players who have entered PVP mode."
+  - name: Safety Toggle Timer
+    key: SafetyToggleTimer
+    type: int
+    default: 2
+    help: "Time it takes for a player to enter/leave PVP mode (in seconds)."
+  - name: Safety Cooldown Timer
+    key: SafetyCooldownTimer
+    type: int
+    default: 3
+    help: "Delay before a player can re-enter/change PVP state (in seconds)."
+  - name: Spawn Items
+    key: SpawnItems
+    type: str
+    default: ""
+    help: "Comma-separated item types new players spawn with (example: Base.Axe,Base.Bag_BigHikingBag). Stored as string."
+  - name: Default Port
+    key: DefaultPort
+    type: int
+    default: 16261
+    help: "Default starting port for player data (UDP)."
+  - name: UDP Port
+    key: UDPPort
+    type: int
+    default: 16262
+    help: "Secondary UDP port used by the server."
+  - name: Reset ID
+    key: ResetID
+    type: int
+    default: 6530796
+    help: "Soft-reset identifier used to force clients to recreate characters if mismatched."
+  - name: Mods
+    key: Mods
+    type: str
+    default: ""
+    help: "Mod loading ID or list; keep as string."
+  - name: Map
+    key: Map
+    type: str
+    default: "Muldraugh, KY"
+    help: "Folder name of the map to load."
+  - name: Do Lua Checksum
+    key: DoLuaChecksum
+    type: bool
+    default: true
+    help: "Kick clients whose game files don't match the server's."
+  - name: Deny Login On Overloaded Server
+    key: DenyLoginOnOverloadedServer
+    type: bool
+    default: true
+    help: "Deny logins when server is overloaded."
+  - name: Public Server
+    key: Public
+    type: bool
+    default: false
+    help: "Show the server on the in-game browser; Steam-enabled servers are always visible."
+  - name: Public Name
+    key: PublicName
+    type: str
+    default: "My PZ Server"
+    help: "Name displayed in the server browser."
+  - name: Public Description
+    key: PublicDescription
+    type: str
+    default: ""
+    help: "Description displayed in public server browser; use \n for newlines."
+  - name: Max Players
+    key: MaxPlayers
+    type: int
+    default: 32
+    help: "Maximum number of players allowed on the server (excluding admins)."
+  - name: Ping Limit
+    key: PingLimit
+    type: int
+    default: 400
+    help: "Ping limit in milliseconds before a player is kicked (100 disables)."
+  - name: Hours For Loot Respawn
+    key: HoursForLootRespawn
+    type: int
+    default: 0
+    help: "Hours after which containers will respawn loot (0 disables)."
+  - name: Max Items For Loot Respawn
+    key: MaxItemsForLootRespawn
+    type: int
+    default: 4
+    help: "Containers with this many items or more will not respawn."
+  - name: Construction Prevents Loot Respawn
+    key: ConstructionPreventsLootRespawn
+    type: bool
+    default: true
+    help: "Items will not respawn in buildings that players have barricaded or built in."
+  - name: Drop Off Whitelist After Death
+    key: DropOffWhiteListAfterDeath
+    type: bool
+    default: false
+    help: "Remove player accounts from whitelist after death (prevents new character creation)."
+  - name: No Fire
+    key: NoFire
+    type: bool
+    default: false
+    help: "Disable all forms of fire except campfires."
+  - name: Announce Death
+    key: AnnounceDeath
+    type: bool
+    default: false
+    help: "Display a global message when a player dies."
+  - name: Minutes Per Page
+    key: MinutesPerPage
+    type: float
+    default: 1.0
+    help: "Number of in-game minutes to read one page."
+  - name: Save World Every Minutes
+    key: SaveWorldEveryMinutes
+    type: int
+    default: 0
+    help: "Map save interval in real-world minutes (0 for disabled)."
+  - name: Player Safehouse
+    key: PlayerSafehouse
+    type: bool
+    default: false
+    help: "Allow both admins and players to claim safehouses."
+  - name: Admin Safehouse
+    key: AdminSafehouse
+    type: bool
+    default: false
+    help: "Only admins can claim safehouses."
+  - name: Safehouse Allow Trespass
+    key: SafehouseAllowTrepass
+    type: bool
+    default: true
+    help: "Allow non-members to enter safehouses without invitation."
+  - name: Safehouse Allow Fire
+    key: SafehouseAllowFire
+    type: bool
+    default: true
+    help: "Allow fire to damage safehouses."
+  - name: Safehouse Allow Loot
+    key: SafehouseAllowLoot
+    type: bool
+    default: true
+    help: "Allow non-members to take items from safehouses."
+  - name: Safehouse Allow Respawn
+    key: SafehouseAllowRespawn
+    type: bool
+    default: false
+    help: "Players will respawn in a safehouse they were a member of before dying."
+  - name: Safehouse Day Survived To Claim
+    key: SafehouseDaySurvivedToClaim
+    type: int
+    default: 0
+    help: "Number of in-game days a player must survive before claiming a safehouse."
+  - name: Safehouse Removal Time Hours
+    key: SafeHouseRemovalTime
+    type: int
+    default: 144
+    help: "Hours before inactive safehouses are automatically removed."
+  - name: Safehouse Allow Non Residential
+    key: SafehouseAllowNonResidential
+    type: bool
+    default: false
+    help: "Allow players to claim non-residential buildings as safehouses."
+  - name: Allow Destruction By Sledgehammer
+    key: AllowDestructionBySledgehammer
+    type: bool
+    default: true
+    help: "Allow players to destroy world objects with sledgehammers."
+  - name: Sledgehammer Only In Safehouse
+    key: SledgehammerOnlyInSafehouse
+    type: bool
+    default: false
+    help: "Allow destruction by sledgehammer only inside safehouses."
+  - name: Kick Fast Players
+    key: KickFastPlayers
+    type: bool
+    default: false
+    help: "Kick players moving faster than expected (may be buggy)."
+  - name: Server Player ID
+    key: ServerPlayerID
+    type: int
+    default: 1661794134
+    help: "ServerPlayerID used to identify characters from this server."
+  - name: RCON Port
+    key: RCONPort
+    type: int
+    default: 27015
+    help: "Port for the RCON (Remote Console)."
+  - name: RCON Password
+    key: RCONPassword
+    type: str
+    default: ""
+    help: "RCON password (pick a strong password)."
+  - name: Discord Enable
+    key: DiscordEnable
+    type: bool
+    default: false
+    help: "Enable global text chat integration with Discord."
+  - name: Discord Token
+    key: DiscordToken
+    type: str
+    default: ""
+    help: "Discord bot access token."
+  - name: Discord Channel
+    key: DiscordChannel
+    type: str
+    default: ""
+    help: "Discord channel name (use channel ID option if needed)."
+  - name: Discord Channel ID
+    key: DiscordChannelID
+    type: str
+    default: ""
+    help: "Discord channel ID (alternative to channel name)."
+  - name: Server Password
+    key: Password
+    type: str
+    default: ""
+    help: "Password clients must know to join the server (ignored for Host button)."
+  - name: Max Accounts Per User
+    key: MaxAccountsPerUser
+    type: int
+    default: 0
+    help: "Limit on different accounts one Steam user may create (0 = unlimited)."
+  - name: Allow Coop
+    key: AllowCoop
+    type: bool
+    default: true
+    help: "Allow co-op / splitscreen players."
+  - name: Sleep Allowed
+    key: SleepAllowed
+    type: bool
+    default: false
+    help: "Players are allowed to sleep when tired (not required)."
+  - name: Sleep Needed
+    key: SleepNeeded
+    type: bool
+    default: false
+    help: "Players get tired and need to sleep (ignored if SleepAllowed=false)."
+  - name: Knocked Down Allowed
+    key: KnockedDownAllowed
+    type: bool
+    default: true
+    help: "Allow knocked down state."
+  - name: Sneak Mode Hide From Other Players
+    key: SneakModeHideFromOtherPlayers
+    type: bool
+    default: true
+    help: "Hide sneaking players from others."
+  - name: Workshop Items
+    key: WorkshopItems
+    type: str
+    default: ""
+    help: "Semicolon-separated list of Workshop Mod IDs; keep as string."
+  - name: Steam Scoreboard
+    key: SteamScoreboard
+    type: str
+    default: "true"
+    help: "Show Steam usernames/avatars in players list; can be true/false/admin. Stored as string to preserve 'admin' option."
+  - name: Steam VAC
+    key: SteamVAC
+    type: bool
+    default: true
+    help: "Enable Steam VAC system."
+  - name: UPnP
+    key: UPnP
+    type: bool
+    default: true
+    help: "Attempt to configure UPnP port forwarding."
+  - name: Voice Enable
+    key: VoiceEnable
+    type: bool
+    default: true
+    help: "Enable VOIP."
+  - name: Voice Min Distance
+    key: VoiceMinDistance
+    type: float
+    default: 10.0
+    help: "Minimum tile distance over which VOIP can be heard."
+  - name: Voice Max Distance
+    key: VoiceMaxDistance
+    type: float
+    default: 100.0
+    help: "Maximum tile distance over which VOIP can be heard."
+  - name: Voice 3D
+    key: Voice3D
+    type: bool
+    default: true
+    help: "Toggle directional audio for VOIP."
+  - name: Speed Limit
+    key: SpeedLimit
+    type: float
+    default: 70.0
+    help: "Speed limit configuration (game-specific)."
+  - name: Login Queue Enabled
+    key: LoginQueueEnabled
+    type: bool
+    default: false
+    help: "Enable login queue feature."
+  - name: Login Queue Connect Timeout
+    key: LoginQueueConnectTimeout
+    type: int
+    default: 60
+    help: "Timeout for login queue connections (seconds)."
+  - name: Server Browser Announced IP
+    key: server_browser_announced_ip
+    type: str
+    default: ""
+    help: "IP address to broadcast for server browser (useful on multi-homed hosts)."
+  - name: Player Respawn With Self
+    key: PlayerRespawnWithSelf
+    type: bool
+    default: false
+    help: "Players can respawn at the coordinates where they died."
+  - name: Player Respawn With Other
+    key: PlayerRespawnWithOther
+    type: bool
+    default: false
+    help: "Players can respawn at a split-screen/Remote Play player's location."
+  - name: Fast Forward Multiplier
+    key: FastForwardMultiplier
+    type: float
+    default: 40.0
+    help: "Multiplier for how fast time passes while players sleep."
+  - name: Disable Safehouse When Player Connected
+    key: DisableSafehouseWhenPlayerConnected
+    type: bool
+    default: false
+    help: "Safehouse acts like a normal house if a member is connected."
+  - name: Faction Enabled
+    key: Faction
+    type: bool
+    default: true
+    help: "Players can create factions when true."
+  - name: Faction Day Survived To Create
+    key: FactionDaySurvivedToCreate
+    type: int
+    default: 0
+    help: "Days a player must survive before creating a faction."
+  - name: Faction Players Required For Tag
+    key: FactionPlayersRequiredForTag
+    type: int
+    default: 1
+    help: "Number of players required before creating a faction tag."
+  - name: Disable Radio Staff
+    key: DisableRadioStaff
+    type: bool
+    default: false
+    help: "Disable radio transmissions from staff-level access."
+  - name: Disable Radio Admin
+    key: DisableRadioAdmin
+    type: bool
+    default: true
+    help: "Disable radio transmissions from admin-level access."
+  - name: Disable Radio GM
+    key: DisableRadioGM
+    type: bool
+    default: true
+    help: "Disable radio transmissions from GM-level access."
+  - name: Disable Radio Overseer
+    key: DisableRadioOverseer
+    type: bool
+    default: false
+    help: "Disable radio transmissions from overseer-level access."
+  - name: Disable Radio Moderator
+    key: DisableRadioModerator
+    type: bool
+    default: false
+    help: "Disable radio transmissions from moderator-level access."
+  - name: Disable Radio Invisible
+    key: DisableRadioInvisible
+    type: bool
+    default: true
+    help: "Disable radio transmissions from invisible players."
+  - name: Client Command Filter
+    key: ClientCommandFilter
+    type: str
+    default: "-vehicle.*;+vehicle.damageWindow;+vehicle.fixPart;+vehicle.installPart;+vehicle.uninstallPart"
+    help: "Semicolon-separated filter for commands excluded/included in cmd.txt log; keep as string."
+  - name: Client Action Logs
+    key: ClientActionLogs
+    type: str
+    default: "ISEnterVehicle;ISExitVehicle;ISTakeEngineParts;"
+    help: "Semicolon-separated list of actions written to ClientActionLogs.txt."
+  - name: Perk Logs
+    key: PerkLogs
+    type: bool
+    default: true
+    help: "Track changes in player perk levels in PerkLog.txt."
+  - name: Item Numbers Limit Per Container
+    key: ItemNumbersLimitPerContainer
+    type: int
+    default: 0
+    help: "Maximum number of items per container (0 = no limit)."
+  - name: Blood Splat Lifespan Days
+    key: BloodSplatLifespanDays
+    type: int
+    default: 0
+    help: "Days before old blood splats are removed (0 = never)."
+  - name: Allow Non ASCII Username
+    key: AllowNonAsciiUsername
+    type: bool
+    default: false
+    help: "Allow use of non-ASCII characters in usernames."
+  - name: Ban Kick Global Sound
+    key: BanKickGlobalSound
+    type: bool
+    default: true
+    help: "Play a global sound for ban/kick events."
+  - name: Remove Player Corpses On Corpse Removal
+    key: RemovePlayerCorpsesOnCorpseRemoval
+    type: bool
+    default: false
+    help: "Also remove player corpses when corpse removal triggers."
+  - name: Trash Delete All
+    key: TrashDeleteAll
+    type: bool
+    default: false
+    help: "Allow players to use the 'delete all' button on bins."
+  - name: PVP Melee While Hit Reaction
+    key: PVPMeleeWhileHitReaction
+    type: bool
+    default: false
+    help: "Allow players to hit again when struck by another player."
+  - name: Mouse Over To See Display Name
+    key: MouseOverToSeeDisplayName
+    type: bool
+    default: true
+    help: "Require mouse-over to see player's display name."
+  - name: Hide Players Behind You
+    key: HidePlayersBehindYou
+    type: bool
+    default: true
+    help: "Automatically hide players you can't see (e.g., behind you)."
+  - name: PVP Melee Damage Modifier
+    key: PVPMeleeDamageModifier
+    type: float
+    default: 30.0
+    help: "Damage multiplier for PVP melee attacks."
+  - name: PVP Firearm Damage Modifier
+    key: PVPFirearmDamageModifier
+    type: float
+    default: 50.0
+    help: "Damage multiplier for PVP ranged attacks."
+  - name: Car Engine Attraction Modifier
+    key: CarEngineAttractionModifier
+    type: float
+    default: 0.5
+    help: "Modify the range of zombie attraction to cars; lower values reduce lag."
+  - name: Player Bump Player
+    key: PlayerBumpPlayer
+    type: bool
+    default: false
+    help: "Whether players can bump and knock over other players when running through them."
+  - name: Map Remote Player Visibility
+    key: MapRemotePlayerVisibility
+    type: int
+    default: 1
+    help: "Controls display of remote players on the map (1=Hidden,2=Friends,3=Everyone)."
+  - name: Backups Count
+    key: BackupsCount
+    type: int
+    default: 5
+    help: "Minimum backups to keep."
+  - name: Backups On Start
+    key: BackupsOnStart
+    type: bool
+    default: true
+    help: "Create a backup when the server starts."
+  - name: Backups On Version Change
+    key: BackupsOnVersionChange
+    type: bool
+    default: true
+    help: "Create a backup when the server version changes."
+  - name: Backups Period
+    key: BackupsPeriod
+    type: int
+    default: 0
+    help: "Periodic backup interval (in minutes); 0 disables periodic backups."
+  - name: AntiCheat Protection Type 1
+    key: AntiCheatProtectionType1
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 1."
+  - name: AntiCheat Protection Type 2
+    key: AntiCheatProtectionType2
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 2."
+  - name: AntiCheat Protection Type 3
+    key: AntiCheatProtectionType3
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 3."
+  - name: AntiCheat Protection Type 4
+    key: AntiCheatProtectionType4
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 4."
+  - name: AntiCheat Protection Type 5
+    key: AntiCheatProtectionType5
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 5."
+  - name: AntiCheat Protection Type 6
+    key: AntiCheatProtectionType6
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 6."
+  - name: AntiCheat Protection Type 7
+    key: AntiCheatProtectionType7
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 7."
+  - name: AntiCheat Protection Type 8
+    key: AntiCheatProtectionType8
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 8."
+  - name: AntiCheat Protection Type 9
+    key: AntiCheatProtectionType9
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 9."
+  - name: AntiCheat Protection Type 10
+    key: AntiCheatProtectionType10
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 10."
+  - name: AntiCheat Protection Type 11
+    key: AntiCheatProtectionType11
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 11."
+  - name: AntiCheat Protection Type 12
+    key: AntiCheatProtectionType12
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 12."
+  - name: AntiCheat Protection Type 13
+    key: AntiCheatProtectionType13
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 13."
+  - name: AntiCheat Protection Type 14
+    key: AntiCheatProtectionType14
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 14."
+  - name: AntiCheat Protection Type 15
+    key: AntiCheatProtectionType15
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 15."
+  - name: AntiCheat Protection Type 16
+    key: AntiCheatProtectionType16
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 16."
+  - name: AntiCheat Protection Type 17
+    key: AntiCheatProtectionType17
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 17."
+  - name: AntiCheat Protection Type 18
+    key: AntiCheatProtectionType18
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 18."
+  - name: AntiCheat Protection Type 19
+    key: AntiCheatProtectionType19
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 19."
+  - name: AntiCheat Protection Type 20
+    key: AntiCheatProtectionType20
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 20."
+  - name: AntiCheat Protection Type 21
+    key: AntiCheatProtectionType21
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 21."
+  - name: AntiCheat Protection Type 22
+    key: AntiCheatProtectionType22
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 22."
+  - name: AntiCheat Protection Type 23
+    key: AntiCheatProtectionType23
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 23."
+  - name: AntiCheat Protection Type 24
+    key: AntiCheatProtectionType24
+    type: bool
+    default: true
+    help: "Disable/enable anti-cheat protection type 24."
+  - name: AntiCheat Type 2 Threshold Multiplier
+    key: AntiCheatProtectionType2ThresholdMultiplier
+    type: float
+    default: 3.0
+    help: "Threshold multiplier for anti-cheat protection type 2."
+  - name: AntiCheat Type 3 Threshold Multiplier
+    key: AntiCheatProtectionType3ThresholdMultiplier
+    type: float
+    default: 1.0
+    help: "Threshold multiplier for anti-cheat protection type 3."
+  - name: AntiCheat Type 4 Threshold Multiplier
+    key: AntiCheatProtectionType4ThresholdMultiplier
+    type: float
+    default: 1.0
+    help: "Threshold multiplier for anti-cheat protection type 4."
+  - name: AntiCheat Type 9 Threshold Multiplier
+    key: AntiCheatProtectionType9ThresholdMultiplier
+    type: float
+    default: 1.0
+    help: "Threshold multiplier for anti-cheat protection type 9."
+  - name: AntiCheat Type 15 Threshold Multiplier
+    key: AntiCheatProtectionType15ThresholdMultiplier
+    type: float
+    default: 1.0
+    help: "Threshold multiplier for anti-cheat protection type 15."
+  - name: AntiCheat Type 20 Threshold Multiplier
+    key: AntiCheatProtectionType20ThresholdMultiplier
+    type: float
+    default: 1.0
+    help: "Threshold multiplier for anti-cheat protection type 20."
+  - name: AntiCheat Type 22 Threshold Multiplier
+    key: AntiCheatProtectionType22ThresholdMultiplier
+    type: float
+    default: 1.0
+    help: "Threshold multiplier for anti-cheat protection type 22."
+  - name: AntiCheat Type 24 Threshold Multiplier
+    key: AntiCheatProtectionType24ThresholdMultiplier
+    type: float
+    default: 6.0
+    help: "Threshold multiplier for anti-cheat protection type 24."

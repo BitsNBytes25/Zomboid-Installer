@@ -103,10 +103,7 @@ function install_application() {
 	
 	# Install the management script
 	install_warlock_manager "$REPO" "$INSTALLER_VERSION"
-
-	# If other PIP packages are required for your management interface,
-	# add them here as necessary, for example for RCON support:
-	#  sudo -u $GAME_USER $GAME_DIR/.venv/bin/pip install rcon
+	sudo -u $GAME_USER $GAME_DIR/.venv/bin/pip install rcon
 	
 	# Use the management script to install the game server
 	if ! $GAME_DIR/manage.py --update; then
