@@ -82,6 +82,8 @@ class GameService(RCONService):
 		self.configs = {
 			'zomboid': INIConfig('zomboid', os.path.join(here, 'Server/servertest.ini'))
 		}
+		# Zomboid does not use a standards-compliant INI structure, so spoof the group.
+		self.configs['zomboid'].spoof_group = True
 		self.load()
 
 	def option_value_updated(self, option: str, previous_value, new_value):
