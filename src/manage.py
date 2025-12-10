@@ -20,7 +20,7 @@ from scriptlets.warlock.steam_app import *
 # from scriptlets.warlock.http_service import *
 from scriptlets.warlock.rcon_service import *
 from scriptlets.warlock.ini_config import *
-# from scriptlets.warlock.properties_config import *
+from scriptlets.warlock.properties_config import *
 from scriptlets.warlock.default_run import *
 
 # For games that use Steam, this provides a quick method for checking for updates
@@ -80,10 +80,8 @@ class GameService(RCONService):
 		self.service = service
 		self.game = game
 		self.configs = {
-			'zomboid': INIConfig('zomboid', os.path.join(here, 'Server/servertest.ini'))
+			'zomboid': PropertiesConfig('zomboid', os.path.join(here, 'Server/servertest.ini'))
 		}
-		# Zomboid does not use a standards-compliant INI structure, so spoof the group.
-		self.configs['zomboid'].spoof_group = True
 		self.load()
 
 	def option_value_updated(self, option: str, previous_value, new_value):
@@ -100,12 +98,12 @@ class GameService(RCONService):
 			# Update firewall for game port change
 			if previous_value:
 				firewall_remove(int(previous_value), 'tcp')
-			firewall_allow(int(new_value), 'udp', 'Allow %s data port' % self.game.desc)
+			firewall_allow(int(new_value), 'udp', '%s data port' % self.game.desc)
 		elif option == 'UDP Port':
 			# Update firewall for game port change
 			if previous_value:
 				firewall_remove(int(previous_value), 'udp')
-			firewall_allow(int(new_value), 'udp', 'Allow %s game port' % self.game.desc)
+			firewall_allow(int(new_value), 'udp', '%s game port' % self.game.desc)
 
 	def is_api_enabled(self) -> bool:
 		"""
@@ -192,6 +190,17 @@ class GameService(RCONService):
 		:return:
 		"""
 		self._api_cmd('save')
+
+	def get_port_definitions(self) -> list:
+		"""
+		Get a list of port definitions for this service
+		:return:
+		"""
+		return [
+			('Default Port', 'udp', '%s data port' % self.game.desc),
+			('UDP Port', 'udp', '%s game port' % self.game.desc),
+			('RCON Port', 'tcp', '%s RCON port' % self.game.desc)
+		]
 
 
 def menu_first_run(game: GameApp):
