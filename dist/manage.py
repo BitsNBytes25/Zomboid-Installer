@@ -3001,6 +3001,36 @@ class GameService(RCONService):
 			('RCON Port', 'tcp', '%s RCON port' % self.game.desc)
 		]
 
+	def post_start(self) -> bool:
+		# Start the service for the first time to generate default config files
+		# and to let the server prompt for the first run options.
+		if os.path.exists(os.path.join(here, 'admin.passwd')):
+			with open(os.path.join(here, 'admin.passwd'), 'r') as f:
+				random_password = f.read().strip()
+		else:
+			random_password = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
+			with open(os.path.join(here, 'admin.passwd'), 'w') as f:
+				f.write(random_password)
+
+		counter = 0
+		while counter < 60:
+			counter += 1
+			log = self.get_logs(1)
+			logs = self.get_logs(10)
+
+			# The server prompts for admin password on first run
+			if 'Enter new administrator password:' in log or 'Confirm the password:' in log:
+				with open('/var/run/zomboid.socket', 'w') as f:
+					f.write(random_password + '\n')
+			elif '##########' in logs:
+				# Generally indicates the server has started and is in the final steps of loading.
+				break
+
+			time.sleep(1)
+
+		return super().post_start()
+
+
 
 def menu_first_run(game: GameApp):
 	"""
@@ -3017,41 +3047,30 @@ def menu_first_run(game: GameApp):
 
 	svc = game.get_services()[0]
 
-	if os.path.exists(os.path.join(here, 'Server', 'servertest.ini')):
-		# Service already registered
-		print('Game already setup, skipping first run')
-		return
-
-	random_password = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
-
-	# Start the service for the first time to generate default config files
-	# and to let the server prompt for the first run options.
-	with open(os.path.join(here, 'admin.passwd'), 'w') as f:
-		f.write(random_password)
-
 	print('Starting the server for initial setup...')
 	subprocess.Popen(['systemctl', 'start', svc.service])
 	time.sleep(10)
 
 	counter = 0
-	while counter < 240:
+	while counter < 300:
 		counter += 1
-		log = svc.get_logs(1)
-
-		# The server prompts for admin password on first run
-		if 'Enter new administrator password:' in log or 'Confirm the password:' in log:
-			with open('/var/run/zomboid.socket', 'w') as f:
-				f.write(random_password + '\n')
-
 		if svc.is_running():
 			break
 
-		time.sleep(10)
+		time.sleep(1)
 
 	print('First start finished, stopping game server...')
 	subprocess.Popen(['systemctl', 'stop', svc.service])
 	time.sleep(10)
 	svc.load()
+
+	if os.path.exists(os.path.join(here, 'admin.passwd')):
+		with open(os.path.join(here, 'admin.passwd'), 'r') as f:
+			random_password = f.read().strip()
+	else:
+		random_password = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
+		with open(os.path.join(here, 'admin.passwd'), 'w') as f:
+			f.write(random_password)
 
 	# Allow default game ports
 	firewall_allow(int(svc.get_option_value('Default Port')), 'udp', 'Allow %s data port' % svc.game.desc)
