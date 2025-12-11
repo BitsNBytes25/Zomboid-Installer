@@ -2534,13 +2534,9 @@ class PropertiesConfig(BaseConfig):
 		Save the configuration file back to disk
 		:return:
 		"""
-		with open(self.path, 'w') as cfgfile:
-			for key, value in self.values.items():
-				# Escape '%' characters that may be present
-				escaped_value = value.replace(':', '\\:')
-				cfgfile.write(f'{key}={escaped_value}\n')
-
 		# Change ownership to game user if running as root
+		uid = None
+		gid = None
 		if os.geteuid() == 0:
 			# Determine game user based on parent directories
 			check_path = os.path.dirname(self.path)
@@ -2549,9 +2545,34 @@ class PropertiesConfig(BaseConfig):
 					stat_info = os.stat(check_path)
 					uid = stat_info.st_uid
 					gid = stat_info.st_gid
-					os.chown(self.path, uid, gid)
 					break
 				check_path = os.path.dirname(check_path)
+
+		# Ensure directory exists
+		# This can't just be a simple os.makedirs call since we need to set ownership
+		# on each created directory if running as root
+		if not os.path.exists(os.path.dirname(self.path)):
+			paths = os.path.dirname(self.path).split('/')
+			check_path = ''
+			for part in paths:
+				if part == '':
+					continue
+				check_path += '/' + part
+				if not os.path.exists(check_path):
+					os.mkdir(check_path, 0o755)
+					if os.geteuid() == 0 and uid is not None and gid is not None:
+						os.chown(check_path, uid, gid)
+
+		with open(self.path, 'w') as cfgfile:
+			for key, value in self.values.items():
+				# Escape '%' characters that may be present
+				escaped_value = value.replace(':', '\\:')
+				cfgfile.write(f'{key}={escaped_value}\n')
+
+		if os.geteuid() == 0 and uid is not None and gid is not None:
+			os.chown(self.path, uid, gid)
+
+
 
 
 def menu_get_services(game):
