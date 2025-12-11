@@ -55,9 +55,7 @@ class GameApp(SteamApp):
 
 		:return:
 		"""
-		files = ['banned-ips.json', 'banned-players.json', 'ops.json', 'whitelist.json']
-		for service in self.get_services():
-			files.append(service.get_name())
+		files = ['db', 'Saves']
 		return files
 
 	def get_save_directory(self) -> Union[str, None]:
@@ -66,7 +64,7 @@ class GameApp(SteamApp):
 
 		:return:
 		"""
-		return os.path.join(here, 'AppFiles')
+		return here
 
 
 class GameService(RCONService):
