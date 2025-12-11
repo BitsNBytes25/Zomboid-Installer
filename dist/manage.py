@@ -2957,12 +2957,13 @@ class GameService(RCONService):
 		:return:
 		"""
 		try:
-			ret = self._api_cmd('/list')
+			ret = self._api_cmd('players')
 			# ret should contain 'There are N of a max...' where N is the player count.
 			if ret is None:
 				return None
-			elif 'There are ' in ret:
-				return int(ret[10:ret.index(' of a max')].strip())
+			# Players connected (0):
+			elif 'Players connected ' in ret:
+				return int(ret.split('(')[1].split(')')[0])
 			else:
 				return None
 		except:
