@@ -237,7 +237,7 @@ def menu_first_run(game: GameApp):
 	counter = 0
 	while counter < 240:
 		counter += 1
-		log = svc.get_latest_log_lines(1)
+		log = svc.get_logs(1)
 
 		# The server prompts for admin password on first run
 		if 'Enter new administrator password:' in log or 'Confirm the password:' in log:
