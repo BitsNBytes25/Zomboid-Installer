@@ -37,7 +37,7 @@
 ############################################
 
 # Name of the game (used to create the directory)
-INSTALLER_VERSION="v20251127~DEV"
+INSTALLER_VERSION="v20251211"
 GAME="Zomboid"
 GAME_DESC="Project Zomboid Dedicated Server"
 REPO="BitsNBytes25/Zomboid-Installer"
