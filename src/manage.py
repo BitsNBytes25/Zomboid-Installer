@@ -254,23 +254,6 @@ def menu_first_run(game: GameApp):
 
 	svc = game.get_services()[0]
 
-	print('Starting the server for initial setup...')
-	subprocess.Popen(['systemctl', 'start', svc.service])
-	time.sleep(10)
-
-	counter = 0
-	while counter < 300:
-		counter += 1
-		if svc.is_running():
-			break
-
-		time.sleep(1)
-
-	print('First start finished, stopping game server...')
-	subprocess.Popen(['systemctl', 'stop', svc.service])
-	time.sleep(10)
-	svc.load()
-
 	if os.path.exists(os.path.join(here, 'admin.passwd')):
 		with open(os.path.join(here, 'admin.passwd'), 'r') as f:
 			random_password = f.read().strip()
@@ -280,11 +263,10 @@ def menu_first_run(game: GameApp):
 			f.write(random_password)
 
 	# Allow default game ports
-	firewall_allow(int(svc.get_option_value('Default Port')), 'udp', 'Allow %s data port' % svc.game.desc)
-	firewall_allow(int(svc.get_option_value('UDP Port')), 'udp', 'Allow %s game port' % svc.game.desc)
+	svc.option_ensure_set('Default Port')
+	svc.option_ensure_set('UDP Port')
 	if not svc.option_has_value('RCON Password'):
 		# Generate a random password for RCON
-
 		svc.set_option('RCON Password', random_password)
 
 if __name__ == '__main__':
