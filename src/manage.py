@@ -55,8 +55,13 @@ class GameApp(SteamApp):
 
 		:return:
 		"""
-		files = ['db', 'Saves']
-		return files
+		return [
+			'db',
+			'Saves',
+			'Server/servertest_SandboxVars.lua',
+			'Server/servertest_spawnpoints.lua',
+			'Server/servertest_spawnregions.lua'
+		]
 
 	def get_save_directory(self) -> Union[str, None]:
 		"""

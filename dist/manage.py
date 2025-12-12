@@ -2006,6 +2006,7 @@ class BaseService:
 		self.start()
 
 
+
 class RCONService(BaseService):
 	def _api_cmd(self, cmd) -> Union[None,str]:
 		"""
@@ -2437,6 +2438,7 @@ class INIConfig(BaseConfig):
 					break
 				check_path = os.path.dirname(check_path)
 
+
 class PropertiesConfig(BaseConfig):
 	"""
 	Configuration handler for Java-style .properties files
@@ -2571,6 +2573,7 @@ class PropertiesConfig(BaseConfig):
 
 		if os.geteuid() == 0 and uid is not None and gid is not None:
 			os.chown(self.path, uid, gid)
+
 
 
 
@@ -2843,6 +2846,7 @@ def run_manager(game):
 			svc = services[0]
 			menu_service(svc)
 
+
 # For games that use Steam, this provides a quick method for checking for updates
 # from scriptlets.steam.steamcmd_check_app_update import *
 
@@ -2875,8 +2879,13 @@ class GameApp(SteamApp):
 
 		:return:
 		"""
-		files = ['db', 'Saves']
-		return files
+		return [
+			'db',
+			'Saves',
+			'Server/servertest_SandboxVars.lua',
+			'Server/servertest_spawnpoints.lua',
+			'Server/servertest_spawnregions.lua'
+		]
 
 	def get_save_directory(self) -> Union[str, None]:
 		"""

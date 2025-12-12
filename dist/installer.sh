@@ -37,7 +37,6 @@
 ############################################
 
 # Name of the game (used to create the directory)
-INSTALLER_VERSION="v20251211"
 GAME="Zomboid"
 GAME_DESC="Project Zomboid Dedicated Server"
 REPO="BitsNBytes25/Zomboid-Installer"
@@ -518,26 +517,12 @@ function install_warlock_manager() {
 	# Install management console and its dependencies
 	local SRC=""
 	local REPO="$1"
-	local INSTALLER_VERSION="$2"
 
-	if [[ "$INSTALLER_VERSION" == *"~DEV"* ]]; then
-		# Development version, pull from dev branch
-		SRC="https://raw.githubusercontent.com/${REPO}/refs/heads/dev/dist/manage.py"
-		echo "Trying to download manage.py from dev branch on $REPO"
-	else
-		# Stable version, pull from tagged release
-		SRC="https://raw.githubusercontent.com/${REPO}/refs/tags/${INSTALLER_VERSION}/dist/manage.py"
-		echo "Trying to download manage.py from $INSTALLER_VERSION tag on $REPO"
-	fi
+	SRC="https://raw.githubusercontent.com/${REPO}/refs/heads/main/dist/manage.py"
 
 	if ! download "$SRC" "$GAME_DIR/manage.py"; then
-		# Fallback to main branch
-		echo "Download failed, falling back to main branch..." >&2
-		SRC="https://raw.githubusercontent.com/${REPO}/refs/heads/main/dist/manage.py"
-		if ! download "$SRC" "$GAME_DIR/manage.py"; then
-			echo "Could not download management script!" >&2
-			exit 1
-		fi
+		echo "Could not download management script!" >&2
+		exit 1
 	fi
 
 	chown $GAME_USER:$GAME_USER "$GAME_DIR/manage.py"
@@ -1454,7 +1439,7 @@ function install_steamcmd() {
 	fi
 }
 
-print_header "$GAME_DESC *unofficial* Installer ${INSTALLER_VERSION}"
+print_header "$GAME_DESC *unofficial* Installer"
 
 ############################################
 ## Installer Actions
@@ -1496,7 +1481,7 @@ function install_application() {
 	install_steamcmd
 	
 	# Install the management script
-	install_warlock_manager "$REPO" "$INSTALLER_VERSION"
+	install_warlock_manager "$REPO"
 	sudo -u $GAME_USER $GAME_DIR/.venv/bin/pip install rcon
 	
 	# Use the management script to install the game server

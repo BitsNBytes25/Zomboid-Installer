@@ -37,7 +37,6 @@
 ############################################
 
 # Name of the game (used to create the directory)
-INSTALLER_VERSION="v20251211"
 GAME="Zomboid"
 GAME_DESC="Project Zomboid Dedicated Server"
 REPO="BitsNBytes25/Zomboid-Installer"
@@ -60,7 +59,7 @@ GAME_SERVICE="zomboid"
 # scriptlet:warlock/install_warlock_manager.sh
 # scriptlet:steam/install-steamcmd.sh
 
-print_header "$GAME_DESC *unofficial* Installer ${INSTALLER_VERSION}"
+print_header "$GAME_DESC *unofficial* Installer"
 
 ############################################
 ## Installer Actions
@@ -102,7 +101,7 @@ function install_application() {
 	install_steamcmd
 	
 	# Install the management script
-	install_warlock_manager "$REPO" "$INSTALLER_VERSION"
+	install_warlock_manager "$REPO"
 	sudo -u $GAME_USER $GAME_DIR/.venv/bin/pip install rcon
 	
 	# Use the management script to install the game server
