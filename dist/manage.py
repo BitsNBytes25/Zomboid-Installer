@@ -3025,7 +3025,7 @@ class GameService(RCONService):
 		:param message:
 		:return:
 		"""
-		self._api_cmd('/servermsg %s' % message)
+		self._api_cmd('servermsg "%s"' % message.replace('"', "'"))
 
 	def save_world(self):
 		"""
