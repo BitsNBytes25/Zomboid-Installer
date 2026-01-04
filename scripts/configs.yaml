@@ -177,11 +177,11 @@ zomboid:
     type: int
     default: 6530796
     help: "Soft-reset identifier used to force clients to recreate characters if mismatched."
-  - name: Mods
+  - name: Mod Names
     key: Mods
     type: str
     default: ""
-    help: "Mod loading ID or list; keep as string."
+    help: "Semicolon-separated list of mod names to load, usually referred to as 'Mod ID', example 'ModName1;ModName2'."
   - name: Map
     key: Map
     type: str
@@ -392,11 +392,11 @@ zomboid:
     type: bool
     default: true
     help: "Hide sneaking players from others."
-  - name: Workshop Items
+  - name: Mod Workshop IDs
     key: WorkshopItems
     type: str
     default: ""
-    help: "Semicolon-separated list of Workshop Mod IDs; keep as string."
+    help: "Semicolon-separated list of Workshop Mod IDs."
   - name: Steam Scoreboard
     key: SteamScoreboard
     type: str
