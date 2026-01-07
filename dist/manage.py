@@ -35,6 +35,7 @@ from rcon.exceptions import WrongPassword
 import configparser
 import tempfile
 import argparse
+import logging
 
 def get_enabled_firewall() -> str:
 	"""
@@ -2015,6 +2016,9 @@ class RCONService(BaseService):
 		:param cmd:
 		:return: None if RCON not available, or the result of the command
 		"""
+		# Some game servers don't handle RCON very well, so try a few times before giving up.
+		retry = 6
+
 		if not (self.is_running() or self.is_starting() or self.is_stopping()):
 			# If service is not running, don't even try to connect.
 			return None
@@ -2034,12 +2038,19 @@ class RCONService(BaseService):
 			print("RCON password is not set!  Please populate get_api_password definition.", file=sys.stderr)
 			return None
 
-		try:
-			with Client('127.0.0.1', port, passwd=password, timeout=2) as client:
-				return client.run(cmd).strip()
-		except Exception as e:
-			print(str(e), file=sys.stderr)
-			return None
+		counter = 0
+		while counter < retry:
+			counter += 1
+			try:
+				with Client('127.0.0.1', port, passwd=password, timeout=5) as client:
+					ret = client.run(cmd, enforce_id=False).strip()
+					client.close()
+					return ret
+			except Exception as e:
+				print('Failed to establish RCON connection (attempt %s): %s' % (str(counter), str(e)), file=sys.stderr)
+
+		print('All RCON connection attempts failed.', file=sys.stderr)
+		return None
 
 	def is_api_enabled(self) -> bool:
 		"""
@@ -2578,6 +2589,133 @@ class PropertiesConfig(BaseConfig):
 
 
 
+def menu_delayed_action_game(game, action):
+	"""
+	If players are logged in, send 5-minute notifications for an hour before stopping the server
+
+	This action applies to ALL game instances under this application.
+
+	:param game:
+	:param action:
+	:return:
+	"""
+
+	if not action in ['stop', 'restart']:
+		print('ERROR - Invalid action for delayed action: %s' % action, file=sys.stderr)
+		return
+
+	if os.geteuid() != 0:
+		print('ERROR - Unable to stop game service unless run with sudo', file=sys.stderr)
+		return
+
+	msg = game.get_option_value('%s_delayed' % action)
+	if msg == '':
+		msg = 'Server will %s in {time} minutes. Please prepare to log off safely.' % action
+
+	start = round(time.time())
+	services_running = []
+	services = game.get_services()
+
+	print('Issuing %s for all services, please wait as this will give players up to an hour to log off safely.' % action)
+
+	while True:
+		still_running = False
+		minutes_left = 55 - ((round(time.time()) - start) // 60)
+
+		for service in services:
+			if service.is_running():
+				still_running = True
+				if service.service not in services_running:
+					services_running.append(service)
+
+				player_count = service.get_player_count()
+
+				if player_count == 0 or player_count is None:
+					# No players online, stop the service
+					print('No players detected on %s, stopping service now.' % service.service)
+					service.stop()
+				else:
+					# Still online, check to see if we should send a message
+					if '{time}' in msg:
+						msg = msg.replace('{time}', str(minutes_left))
+
+					if minutes_left <= 5:
+						# Once the timer hits 5 minutes left, drop to the standard stop procedure.
+						service.stop()
+
+					if minutes_left % 5 == 0 and minutes_left > 5:
+						# Send the warning every 5 minutes
+						service.send_message(msg)
+
+		if minutes_left % 5 == 0 and minutes_left > 5:
+			print('%s minutes remaining before %s.' % (str(minutes_left), action))
+
+		if not still_running or minutes_left <= 0:
+			# No services are running, stop the timer
+			break
+
+		time.sleep(60)
+
+	if action == 'restart':
+		# Now that all services have been stopped, restart any that were running before
+		for service in services:
+			if service.service in services_running:
+				service.start()
+
+
+def menu_delayed_action(service, action):
+	"""
+	If players are logged in, send 5-minute notifications for an hour before stopping the server
+
+	:param service:
+	:param action:
+	:return:
+	"""
+
+	if not action in ['stop', 'restart']:
+		print('ERROR - Invalid action for delayed action: %s' % action, file=sys.stderr)
+		return
+
+	if os.geteuid() != 0:
+		print('ERROR - Unable to stop game service unless run with sudo', file=sys.stderr)
+		return
+
+	start = round(time.time())
+	msg = service.game.get_option_value('%s_delayed' % action)
+	if msg == '':
+		msg = 'Server will %s in {time} minutes. Please prepare to log off safely.' % action
+
+	print('Issuing %s for %s, please wait as this will give players up to an hour to log off safely.' % (action, service.service))
+
+	while True:
+		minutes_left = 55 - ((round(time.time()) - start) // 60)
+		player_count = service.get_player_count()
+
+		if player_count == 0 or player_count is None:
+			# No players online, stop the timer
+			break
+
+		if '{time}' in msg:
+			msg = msg.replace('{time}', str(minutes_left))
+
+		if minutes_left <= 5:
+			# Once the timer hits 5 minutes left, drop to the standard stop procedure.
+			break
+
+		if minutes_left % 5 == 0:
+			service.send_message(msg)
+
+		if minutes_left % 5 == 0 and minutes_left > 5:
+			print('%s minutes remaining before %s.' % (str(minutes_left), action))
+
+		time.sleep(60)
+
+	if action == 'stop':
+		service.stop()
+	else:
+		service.restart()
+
+
 def menu_get_services(game):
 	"""
 	Get the list of all services for this game in JSON format
@@ -2653,6 +2791,12 @@ def menu_get_metrics(game):
 def run_manager(game):
 	parser = argparse.ArgumentParser('manage.py')
 
+	parser.add_argument(
+		'--debug',
+		help='Enable debug logging output',
+		action='store_true'
+	)
+
 	# Service specification - some options can only be performed on a given service
 	parser.add_argument(
 		'--service',
@@ -2695,6 +2839,16 @@ def run_manager(game):
 	parser.add_argument(
 		'--has-players',
 		help='Check if any players are currently connected to any game service (exit code 0 = yes, 1 = no)',
+		action='store_true'
+	)
+	parser.add_argument(
+		'--delayed-stop',
+		help='Send a 1-hour warning to players before stopping the game server',
+		action='store_true'
+	)
+	parser.add_argument(
+		'--delayed-restart',
+		help='Send a 1-hour warning to players before restarting the game server',
 		action='store_true'
 	)
 
@@ -2764,6 +2918,9 @@ def run_manager(game):
 		action='store_true'
 	)
 	args = parser.parse_args()
+
+	if args.debug:
+		logging.basicConfig(level=logging.DEBUG)
 
 	services = game.get_services()
 
@@ -2888,6 +3045,16 @@ def run_manager(game):
 				is_running = True
 				break
 		sys.exit(0 if is_running else 1)
+	elif args.delayed_stop:
+		if len(services) > 1:
+			menu_delayed_action_game(game, 'stop')
+		else:
+			menu_delayed_action(services[0], 'stop')
+	elif args.delayed_restart:
+		if len(services) > 1:
+			menu_delayed_action_game(game, 'restart')
+		else:
+			menu_delayed_action(services[0], 'restart')
 	else:
 		if len(services) > 1:
 			if not callable(getattr(sys.modules[__name__], 'menu_main', None)):
@@ -2950,6 +3117,24 @@ class GameApp(SteamApp):
 		:return:
 		"""
 		return here
+
+	def check_update_available(self) -> bool:
+		"""
+		Check if a SteamCMD update is available for this game
+
+		:return:
+		"""
+		game_update = super().check_update_available()
+		if game_update:
+			# There's a Steam update available, no need to check further.
+			return game_update
+
+		for svc in self.get_services():
+			# Check for mod updates via Steam Workshop
+			if svc.check_mod_updates():
+				return True
+
+		return False
 
 
 class GameService(RCONService):
@@ -3117,6 +3302,43 @@ class GameService(RCONService):
 
 		return super().post_start()
 
+	def check_mod_updates(self) -> bool:
+		"""
+		Check for mod updates via the Steam Workshop
+		:return:
+		"""
+
+		opt = self.get_option_value('Mod Workshop IDs')
+		if opt == '' or opt is None:
+			# If there are no mods installed, nothing to check.
+			print('No mods installed, skipping mod update check.', file=sys.stderr)
+			return False
+
+		# Ask the server via RCON if there are mods that need updating
+		self._api_cmd('checkModsNeedUpdate')
+		time.sleep(2)
+
+		# This will not return anything useful, so we need to check the logs for the result.
+		update_needed = None
+		logs = self.get_logs(20)
+		for line in logs.splitlines():
+			# CheckModsNeedUpdate: Mods updated
+			# CheckModsNeedUpdate: Mods need update
+			if 'CheckModsNeedUpdate: Mods need update' in line:
+				print('Mod updates are available.', file=sys.stderr)
+				update_needed = True
+				break
+			elif 'CheckModsNeedUpdate: Mods updated' in line:
+				print('All mods are up to date.', file=sys.stderr)
+				update_needed = False
+				break
+
+		if update_needed is None:
+			# Unable to determine mod update status
+			print('Unable to determine mod update status from server logs.', file=sys.stderr)
+			return False
+		else:
+			return update_needed
 
 
 def menu_first_run(game: GameApp):

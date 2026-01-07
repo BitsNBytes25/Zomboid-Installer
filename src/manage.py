@@ -71,6 +71,24 @@ class GameApp(SteamApp):
 		"""
 		return here
 
+	def check_update_available(self) -> bool:
+		"""
+		Check if a SteamCMD update is available for this game
+
+		:return:
+		"""
+		game_update = super().check_update_available()
+		if game_update:
+			# There's a Steam update available, no need to check further.
+			return game_update
+
+		for svc in self.get_services():
+			# Check for mod updates via Steam Workshop
+			if svc.check_mod_updates():
+				return True
+
+		return False
+
 
 class GameService(RCONService):
 	"""
@@ -237,6 +255,43 @@ class GameService(RCONService):
 
 		return super().post_start()
 
+	def check_mod_updates(self) -> bool:
+		"""
+		Check for mod updates via the Steam Workshop
+		:return:
+		"""
+
+		opt = self.get_option_value('Mod Workshop IDs')
+		if opt == '' or opt is None:
+			# If there are no mods installed, nothing to check.
+			print('No mods installed, skipping mod update check.', file=sys.stderr)
+			return False
+
+		# Ask the server via RCON if there are mods that need updating
+		self._api_cmd('checkModsNeedUpdate')
+		time.sleep(2)
+
+		# This will not return anything useful, so we need to check the logs for the result.
+		update_needed = None
+		logs = self.get_logs(20)
+		for line in logs.splitlines():
+			# CheckModsNeedUpdate: Mods updated
+			# CheckModsNeedUpdate: Mods need update
+			if 'CheckModsNeedUpdate: Mods need update' in line:
+				print('Mod updates are available.', file=sys.stderr)
+				update_needed = True
+				break
+			elif 'CheckModsNeedUpdate: Mods updated' in line:
+				print('All mods are up to date.', file=sys.stderr)
+				update_needed = False
+				break
+
+		if update_needed is None:
+			# Unable to determine mod update status
+			print('Unable to determine mod update status from server logs.', file=sys.stderr)
+			return False
+		else:
+			return update_needed
 
 
 def menu_first_run(game: GameApp):

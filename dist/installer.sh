@@ -564,6 +564,18 @@ manager:
     type: str
     default: ""
     help: "The password for accessing a private Steam branch, if applicable."
+  - name: Shutdown Warning Delayed
+    key: shutdown_delayed
+    section: Messages
+    type: str
+    default: Server shutdown in {time} minutes.
+    help: "Custom message broadcasted to players for delayed shutdowns, use {time} to be replaced with number of minutes"
+  - name: Restart Warning Delayed
+    key: restart_delayed
+    section: Messages
+    type: str
+    default: Server restart in {time} minutes.
+    help: "Custom message broadcasted to players for delayed restarts, use {time} to be replaced with number of minutes"
   - name: Shutdown Warning 5 Minutes
     section: Messages
     key: shutdown_5min
@@ -658,7 +670,7 @@ zomboid:
     help: "Clients may join without an account on the whitelist. If false, admins must create accounts."
   - name: Server Welcome Message
     key: ServerWelcomeMessage
-    type: str
+    type: text
     default: "Welcome to Project Zomboid Multiplayer! <LINE> <LINE> To interact with the Chat panel: press Tab, T, or Enter. <LINE> <LINE> The Tab key will change the target stream of the message. <LINE> <LINE> Global Streams: /all <LINE> Local Streams: /say, /yell <LINE> Special Steams: /whisper, /safehouse, /faction. <LINE> <LINE> Press the Up arrow to cycle through your message history. Click the Gear icon to customize chat. <LINE> <LINE> Happy surviving!"
     help: "First welcome message visible in chat. Supports <LINE> and <RGB:r,g,b> markers."
   - name: Auto Create User In Whitelist
@@ -726,11 +738,11 @@ zomboid:
     type: str
     default: ""
     help: "Semicolon-separated list of mod names to load, usually referred to as 'Mod ID', example 'ModName1;ModName2'."
-  - name: Map
+  - name: Mod Maps
     key: Map
     type: str
     default: "Muldraugh, KY"
-    help: "Folder name of the map to load."
+    help: "Folder names of the maps to load, semicolon-separated for multiple maps."
   - name: Do Lua Checksum
     key: DoLuaChecksum
     type: bool
