@@ -1501,6 +1501,13 @@ class BaseService:
 		"""
 		pass
 
+	def get_players(self) -> Union[list, None]:
+		"""
+		Get a list of current players on the server, or None if the API is unavailable
+		:return:
+		"""
+		pass
+
 	def get_pid(self) -> int:
 		"""
 		Get the PID of the running service, or 0 if not running
@@ -2768,6 +2775,14 @@ def menu_get_metrics(game):
 		if start_exec and start_exec['stop_time']:
 			start_exec['stop_time'] = int(start_exec['stop_time'].timestamp())
 
+		players = svc.get_players()
+		# Some games may not support getting a full player list
+		if players is None:
+			players = []
+			player_count = svc.get_player_count()
+		else:
+			player_count = len(players)
+
 		svc_stats = {
 			'service': svc.service,
 			'name': svc.get_name(),
@@ -2775,7 +2790,8 @@ def menu_get_metrics(game):
 			'port': svc.get_port(),
 			'status': status,
 			'enabled': svc.is_enabled(),
-			'player_count': svc.get_player_count(),
+			'players': players,
+			'player_count': player_count,
 			'max_players': svc.get_player_max(),
 			'memory_usage': svc.get_memory_usage(),
 			'cpu_usage': svc.get_cpu_usage(),
@@ -3199,22 +3215,35 @@ class GameService(RCONService):
 		"""
 		return self.get_option_value('RCON Password')
 
+	def get_players(self) -> Union[list, None]:
+		"""
+		Get a list of current players on the server, or None if the API is unavailable
+		:return:
+		"""
+		try:
+			ret = self._api_cmd('players')
+			# ret should contain 'Players connected (N):'.
+			if ret is None:
+				return None
+			else:
+				players = []
+				lines = ret.splitlines()
+				for line in lines:
+					if line.startswith('-'):
+						players.append({'player_name': line[1:]})
+				return players
+		except:
+			return None
+
 	def get_player_count(self) -> Union[int, None]:
 		"""
 		Get the current player count on the server, or None if the API is unavailable
 		:return:
 		"""
-		try:
-			ret = self._api_cmd('players')
-			# ret should contain 'There are N of a max...' where N is the player count.
-			if ret is None:
-				return None
-			# Players connected (0):
-			elif 'Players connected ' in ret:
-				return int(ret.split('(')[1].split(')')[0])
-			else:
-				return None
-		except:
+		players = self.get_players()
+		if players is not None:
+			return len(players)
+		else:
 			return None
 
 	def get_player_max(self) -> int:

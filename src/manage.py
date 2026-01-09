@@ -152,22 +152,35 @@ class GameService(RCONService):
 		"""
 		return self.get_option_value('RCON Password')
 
+	def get_players(self) -> Union[list, None]:
+		"""
+		Get a list of current players on the server, or None if the API is unavailable
+		:return:
+		"""
+		try:
+			ret = self._api_cmd('players')
+			# ret should contain 'Players connected (N):'.
+			if ret is None:
+				return None
+			else:
+				players = []
+				lines = ret.splitlines()
+				for line in lines:
+					if line.startswith('-'):
+						players.append({'player_name': line[1:]})
+				return players
+		except:
+			return None
+
 	def get_player_count(self) -> Union[int, None]:
 		"""
 		Get the current player count on the server, or None if the API is unavailable
 		:return:
 		"""
-		try:
-			ret = self._api_cmd('players')
-			# ret should contain 'There are N of a max...' where N is the player count.
-			if ret is None:
-				return None
-			# Players connected (0):
-			elif 'Players connected ' in ret:
-				return int(ret.split('(')[1].split(')')[0])
-			else:
-				return None
-		except:
+		players = self.get_players()
+		if players is not None:
+			return len(players)
+		else:
 			return None
 
 	def get_player_max(self) -> int:
