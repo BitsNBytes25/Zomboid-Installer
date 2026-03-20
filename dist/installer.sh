@@ -73,21 +73,23 @@ NONINTERACTIVE=0
 BRANCH="main"
 while [ "$#" -gt 0 ]; do
 	case "$1" in
-		--uninstall) MODE_UNINSTALL=1; shift 1;;
-		--dir=*)
-			OVERRIDE_DIR="${1#*=}";
+		--uninstall) MODE_UNINSTALL=1;;
+		--dir=*|--dir)
+			[ "$1" == "--dir" ] && shift 1 && OVERRIDE_DIR="$1" || OVERRIDE_DIR="${1#*=}"
 			[ "${OVERRIDE_DIR:0:1}" == "'" ] && [ "${OVERRIDE_DIR:0-1}" == "'" ] && OVERRIDE_DIR="${OVERRIDE_DIR:1:-1}"
 			[ "${OVERRIDE_DIR:0:1}" == '"' ] && [ "${OVERRIDE_DIR:0-1}" == '"' ] && OVERRIDE_DIR="${OVERRIDE_DIR:1:-1}"
-			shift 1;;
-		--skip-firewall) SKIP_FIREWALL=1; shift 1;;
-		--non-interactive) NONINTERACTIVE=1; shift 1;;
-		--branch=*)
-			BRANCH="${1#*=}";
+			;;
+		--skip-firewall) SKIP_FIREWALL=1;;
+		--non-interactive) NONINTERACTIVE=1;;
+		--branch=*|--branch)
+			[ "$1" == "--branch" ] && shift 1 && BRANCH="$1" || BRANCH="${1#*=}"
 			[ "${BRANCH:0:1}" == "'" ] && [ "${BRANCH:0-1}" == "'" ] && BRANCH="${BRANCH:1:-1}"
 			[ "${BRANCH:0:1}" == '"' ] && [ "${BRANCH:0-1}" == '"' ] && BRANCH="${BRANCH:1:-1}"
-			shift 1;;
+			;;
 		-h|--help) usage;;
+		*) echo "Unknown argument: $1" >&2; usage;;
 	esac
+	shift 1
 done
 
 ##
@@ -96,6 +98,27 @@ if [ $(id -u) -ne 0 ]; then
 	echo "This script must be run as root or with sudo!" >&2
 	exit 1
 fi
+##
+# Simple wrapper to emulate `which -s`
+#
+# The -s flag is not available on all systems, so this function
+# provides a consistent way to check for command existence
+# without having to include '&>/dev/null' everywhere.
+#
+# Returns 0 on success, 1 on failure
+#
+# Arguments:
+#   $1 - Command to check
+#
+# CHANGELOG:
+#   2025.12.15 - Initial version (for a regression fix)
+#
+function cmd_exists() {
+	local CMD="$1"
+	which "$CMD" &>/dev/null
+	return $?
+}
+
 ##
 # Get which firewall is enabled,
 # or "none" if none located
@@ -116,11 +139,12 @@ function get_enabled_firewall() {
 # or "none" if none located
 #
 # CHANGELOG:
+#   2025.12.15 - Use cmd_exists to fix regression bug
 #   2025.04.10 - Switch from "systemctl list-unit-files" to "which" to support older systems
 function get_available_firewall() {
-	if which -s firewall-cmd; then
+	if cmd_exists firewall-cmd; then
 		echo "firewalld"
-	elif which -s ufw; then
+	elif cmd_exists ufw; then
 		echo "ufw"
 	elif systemctl list-unit-files iptables.service &>/dev/null; then
 		echo "iptables"
@@ -131,98 +155,208 @@ function get_available_firewall() {
 ##
 # Check if the OS is "like" a certain type
 #
+# Returns 0 if true, 1 if false
+#
+# Usage:
+#   if os_like debian; then ... ; fi
+#
+function os_like() {
+	local OS="$1"
+
+	if [ -f '/etc/os-release' ]; then
+		ID="$(egrep '^ID=' /etc/os-release | sed 's:ID=::')"
+		LIKE="$(egrep '^ID_LIKE=' /etc/os-release | sed 's:ID_LIKE=::')"
+
+		if [[ "$LIKE" =~ "$OS" ]] || [ "$ID" == "$OS" ]; then
+			return 0;
+		fi
+	fi
+	return 1
+}
+
+##
+# Check if the OS is "like" a certain type
+#
 # ie: "ubuntu" will be like "debian"
+#
+# Returns 0 if true, 1 if false
+# Prints 1 if true, 0 if false
+#
+# Usage:
+#   if [ "$(os_like_debian)" -eq 1 ]; then ... ; fi
+#   if os_like_debian -q; then ... ; fi
+#
 function os_like_debian() {
-	if [ -f '/etc/os-release' ]; then
-		ID="$(egrep '^ID=' /etc/os-release | sed 's:ID=::')"
-		LIKE="$(egrep '^ID_LIKE=' /etc/os-release | sed 's:ID_LIKE=::')"
+	local QUIET=0
+	while [ $# -ge 1 ]; do
+		case $1 in
+			-q)
+				QUIET=1;;
+		esac
+		shift
+	done
 
-		if [[ "$LIKE" =~ 'debian' ]]; then echo 1; return; fi
-		if [[ "$LIKE" =~ 'ubuntu' ]]; then echo 1; return; fi
-		if [ "$ID" == 'debian' ]; then echo 1; return; fi
-		if [ "$ID" == 'ubuntu' ]; then echo 1; return; fi
+	if os_like debian || os_like ubuntu; then
+		if [ $QUIET -eq 0 ]; then echo 1; fi
+		return 0;
 	fi
 
-	echo 0
+	if [ $QUIET -eq 0 ]; then echo 0; fi
+	return 1
 }
 
 ##
 # Check if the OS is "like" a certain type
 #
 # ie: "ubuntu" will be like "debian"
+#
+# Returns 0 if true, 1 if false
+# Prints 1 if true, 0 if false
+#
+# Usage:
+#   if [ "$(os_like_ubuntu)" -eq 1 ]; then ... ; fi
+#   if os_like_ubuntu -q; then ... ; fi
+#
 function os_like_ubuntu() {
-	if [ -f '/etc/os-release' ]; then
-		ID="$(egrep '^ID=' /etc/os-release | sed 's:ID=::')"
-		LIKE="$(egrep '^ID_LIKE=' /etc/os-release | sed 's:ID_LIKE=::')"
+	local QUIET=0
+	while [ $# -ge 1 ]; do
+		case $1 in
+			-q)
+				QUIET=1;;
+		esac
+		shift
+	done
 
-		if [[ "$LIKE" =~ 'ubuntu' ]]; then echo 1; return; fi
-		if [ "$ID" == 'ubuntu' ]; then echo 1; return; fi
+	if os_like ubuntu; then
+		if [ $QUIET -eq 0 ]; then echo 1; fi
+		return 0;
 	fi
 
-	echo 0
+	if [ $QUIET -eq 0 ]; then echo 0; fi
+	return 1
 }
 
 ##
 # Check if the OS is "like" a certain type
 #
 # ie: "ubuntu" will be like "debian"
+#
+# Returns 0 if true, 1 if false
+# Prints 1 if true, 0 if false
+#
+# Usage:
+#   if [ "$(os_like_rhel)" -eq 1 ]; then ... ; fi
+#   if os_like_rhel -q; then ... ; fi
+#
 function os_like_rhel() {
-	if [ -f '/etc/os-release' ]; then
-		ID="$(egrep '^ID=' /etc/os-release | sed 's:ID=::')"
-		LIKE="$(egrep '^ID_LIKE=' /etc/os-release | sed 's:ID_LIKE=::')"
+	local QUIET=0
+	while [ $# -ge 1 ]; do
+		case $1 in
+			-q)
+				QUIET=1;;
+		esac
+		shift
+	done
 
-		if [[ "$LIKE" =~ 'rhel' ]]; then echo 1; return; fi
-		if [[ "$LIKE" =~ 'fedora' ]]; then echo 1; return; fi
-		if [[ "$LIKE" =~ 'centos' ]]; then echo 1; return; fi
-		if [ "$ID" == 'rhel' ]; then echo 1; return; fi
-		if [ "$ID" == 'fedora' ]; then echo 1; return; fi
-		if [ "$ID" == 'centos' ]; then echo 1; return; fi
+	if os_like rhel || os_like fedora || os_like rocky || os_like centos; then
+		if [ $QUIET -eq 0 ]; then echo 1; fi
+		return 0;
 	fi
 
-	echo 0
+	if [ $QUIET -eq 0 ]; then echo 0; fi
+	return 1
 }
 
 ##
 # Check if the OS is "like" a certain type
 #
 # ie: "ubuntu" will be like "debian"
+#
+# Returns 0 if true, 1 if false
+# Prints 1 if true, 0 if false
+#
+# Usage:
+#   if [ "$(os_like_suse)" -eq 1 ]; then ... ; fi
+#   if os_like_suse -q; then ... ; fi
+#
 function os_like_suse() {
-	if [ -f '/etc/os-release' ]; then
-		ID="$(egrep '^ID=' /etc/os-release | sed 's:ID=::')"
-		LIKE="$(egrep '^ID_LIKE=' /etc/os-release | sed 's:ID_LIKE=::')"
+	local QUIET=0
+	while [ $# -ge 1 ]; do
+		case $1 in
+			-q)
+				QUIET=1;;
+		esac
+		shift
+	done
 
-		if [[ "$LIKE" =~ 'suse' ]]; then echo 1; return; fi
-		if [ "$ID" == 'suse' ]; then echo 1; return; fi
+	if os_like suse; then
+		if [ $QUIET -eq 0 ]; then echo 1; fi
+		return 0;
 	fi
 
-	echo 0
+	if [ $QUIET -eq 0 ]; then echo 0; fi
+	return 1
 }
 
 ##
 # Check if the OS is "like" a certain type
 #
 # ie: "ubuntu" will be like "debian"
+#
+# Returns 0 if true, 1 if false
+# Prints 1 if true, 0 if false
+#
+# Usage:
+#   if [ "$(os_like_arch)" -eq 1 ]; then ... ; fi
+#   if os_like_arch -q; then ... ; fi
+#
 function os_like_arch() {
-	if [ -f '/etc/os-release' ]; then
-		ID="$(egrep '^ID=' /etc/os-release | sed 's:ID=::')"
-		LIKE="$(egrep '^ID_LIKE=' /etc/os-release | sed 's:ID_LIKE=::')"
+	local QUIET=0
+	while [ $# -ge 1 ]; do
+		case $1 in
+			-q)
+				QUIET=1;;
+		esac
+		shift
+	done
 
-		if [[ "$LIKE" =~ 'arch' ]]; then echo 1; return; fi
-		if [ "$ID" == 'arch' ]; then echo 1; return; fi
+	if os_like arch; then
+		if [ $QUIET -eq 0 ]; then echo 1; fi
+		return 0;
 	fi
 
-	echo 0
+	if [ $QUIET -eq 0 ]; then echo 0; fi
+	return 1
 }
 
 ##
 # Check if the OS is "like" a certain type
 #
 # ie: "ubuntu" will be like "debian"
+#
+# Returns 0 if true, 1 if false
+# Prints 1 if true, 0 if false
+#
+# Usage:
+#   if [ "$(os_like_bsd)" -eq 1 ]; then ... ; fi
+#   if os_like_bsd -q; then ... ; fi
+#
 function os_like_bsd() {
+	local QUIET=0
+	while [ $# -ge 1 ]; do
+		case $1 in
+			-q)
+				QUIET=1;;
+		esac
+		shift
+	done
+
 	if [ "$(uname -s)" == 'FreeBSD' ]; then
-		echo 1
+		if [ $QUIET -eq 0 ]; then echo 1; fi
+		return 0;
 	else
-		echo 0
+		if [ $QUIET -eq 0 ]; then echo 0; fi
+		return 1
 	fi
 }
 
@@ -230,9 +364,68 @@ function os_like_bsd() {
 # Check if the OS is "like" a certain type
 #
 # ie: "ubuntu" will be like "debian"
+#
+# Returns 0 if true, 1 if false
+# Prints 1 if true, 0 if false
+#
+# Usage:
+#   if [ "$(os_like_macos)" -eq 1 ]; then ... ; fi
+#   if os_like_macos -q; then ... ; fi
+#
 function os_like_macos() {
+	local QUIET=0
+	while [ $# -ge 1 ]; do
+		case $1 in
+			-q)
+				QUIET=1;;
+		esac
+		shift
+	done
+
 	if [ "$(uname -s)" == 'Darwin' ]; then
-		echo 1
+		if [ $QUIET -eq 0 ]; then echo 1; fi
+		return 0;
+	else
+		if [ $QUIET -eq 0 ]; then echo 0; fi
+		return 1
+	fi
+}
+##
+# Get the operating system version
+#
+# Just the major version number is returned
+#
+function os_version() {
+	if [ "$(uname -s)" == 'FreeBSD' ]; then
+		local _V="$(uname -K)"
+		if [ ${#_V} -eq 6 ]; then
+			echo "${_V:0:1}"
+		elif [ ${#_V} -eq 7 ]; then
+			echo "${_V:0:2}"
+		fi
+
+	elif [ -f '/etc/os-release' ]; then
+		local VERS="$(egrep '^VERSION_ID=' /etc/os-release | sed 's:VERSION_ID=::')"
+
+		if [[ "$VERS" =~ '"' ]]; then
+			# Strip quotes around the OS name
+			VERS="$(echo "$VERS" | sed 's:"::g')"
+		fi
+
+		if [[ "$VERS" =~ \. ]]; then
+			# Remove the decimal point and everything after
+			# Trims "24.04" down to "24"
+			VERS="${VERS/\.*/}"
+		fi
+
+		if [[ "$VERS" =~ "v" ]]; then
+			# Remove the "v" from the version
+			# Trims "v24" down to "24"
+			VERS="${VERS/v/}"
+		fi
+
+		echo "$VERS"
+
 	else
 		echo 0
 	fi
@@ -254,33 +447,33 @@ function os_like_macos() {
 #
 #
 # CHANGELOG:
+#   2026.01.09 - Cleanup os_like a bit and add support for RHEL 9's dnf
 #   2025.04.10 - Set Debian frontend to noninteractive
 #
 function package_install (){
 	echo "package_install: Installing $*..."
 
-	TYPE_BSD="$(os_like_bsd)"
-	TYPE_DEBIAN="$(os_like_debian)"
-	TYPE_RHEL="$(os_like_rhel)"
-	TYPE_ARCH="$(os_like_arch)"
-	TYPE_SUSE="$(os_like_suse)"
-
-	if [ "$TYPE_BSD" == 1 ]; then
+	if os_like_bsd -q; then
 		pkg install -y $*
-	elif [ "$TYPE_DEBIAN" == 1 ]; then
+	elif os_like_debian -q; then
 		DEBIAN_FRONTEND="noninteractive" apt-get -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef" install -y $*
-	elif [ "$TYPE_RHEL" == 1 ]; then
-		yum install -y $*
-	elif [ "$TYPE_ARCH" == 1 ]; then
+	elif os_like_rhel -q; then
+		if [ "$(os_version)" -ge 9 ]; then
+			dnf install -y $*
+		else
+			yum install -y $*
+		fi
+	elif os_like_arch -q; then
 		pacman -Syu --noconfirm $*
-	elif [ "$TYPE_SUSE" == 1 ]; then
+	elif os_like_suse -q; then
 		zypper install -y $*
 	else
 		echo 'package_install: Unsupported or unknown OS' >&2
-		echo 'Please report this at https://github.com/cdp1337/ScriptsCollection/issues' >&2
+		echo 'Please report this at https://github.com/eVAL-Agency/ScriptsCollection/issues' >&2
 		exit 1
 	fi
 }
+
 ##
 # Simple download utility function
 #
@@ -291,22 +484,44 @@ function package_install (){
 #
 # Returns 0 on success, 1 on failure
 #
+# Arguments:
+#   --no-overwrite       Skip download if destination file already exists
+#
 # CHANGELOG:
+#   2025.12.15 - Use cmd_exists to fix regression bug
+#   2025.12.04 - Add --no-overwrite option to allow skipping download if the destination file exists
 #   2025.11.23 - Download to a temp location to verify download was successful
 #              - use which -s for cleaner checks
 #   2025.11.09 - Initial version
 #
 function download() {
+	# Argument parsing
 	local SOURCE="$1"
 	local DESTINATION="$2"
+	local OVERWRITE=1
 	local TMP=$(mktemp)
+	shift 2
+
+	while [ $# -ge 1 ]; do
+    		case $1 in
+    			--no-overwrite)
+    				OVERWRITE=0
+    				;;
+    		esac
+    		shift
+    	done
 
 	if [ -z "$SOURCE" ] || [ -z "$DESTINATION" ]; then
 		echo "download: Missing required parameters!" >&2
 		return 1
 	fi
 
-	if which -s curl; then
+	if [ -f "$DESTINATION" ] && [ $OVERWRITE -eq 0 ]; then
+		echo "download: Destination file $DESTINATION already exists, skipping download." >&2
+		return 0
+	fi
+
+	if cmd_exists curl; then
 		if curl -fsL "$SOURCE" -o "$TMP"; then
 			mv $TMP "$DESTINATION"
 			return 0
@@ -314,7 +529,7 @@ function download() {
 			echo "download: curl failed to download $SOURCE" >&2
 			return 1
 		fi
-	elif which -s wget; then
+	elif cmd_exists wget; then
 		if wget -q "$SOURCE" -O "$TMP"; then
 			mv $TMP "$DESTINATION"
 			return 0
@@ -330,11 +545,12 @@ function download() {
 ##
 # Determine if the current shell session is non-interactive.
 #
-# Checks NONINTERACTIVE, CI, DEBIAN_FRONTEND, TERM, and TTY status.
+# Checks NONINTERACTIVE, CI, DEBIAN_FRONTEND, and TERM.
 #
 # Returns 0 (true) if non-interactive, 1 (false) if interactive.
 #
 # CHANGELOG:
+#   2025.12.16 - Remove TTY checks to avoid false positives in some environments
 #   2025.11.23 - Initial version
 #
 function is_noninteractive() {
@@ -348,8 +564,8 @@ function is_noninteractive() {
 		return 0
 	fi
 
-	# dumb terminal or no tty on stdin/stdout
-	if [ "${TERM:-}" = "dumb" ] || [ ! -t 0 ] || [ ! -t 1 ]; then
+	# dumb terminal
+	if [ "${TERM:-}" = "dumb" ]; then
 		return 0
 	fi
 
@@ -412,6 +628,7 @@ function prompt_text() {
 #   1 for yes, 0 for no (or inverted if --invert is set)
 #
 # CHANGELOG:
+#   2025.12.16 - Add text output for non-interactive and empty responses
 #   2025.11.23 - Use is_noninteractive to handle non-interactive mode
 #   2025.11.09 - Add -q (quiet) option to suppress output after prompt (and use return value)
 #   2025.01.01 - Initial version
@@ -440,10 +657,12 @@ function prompt_yn() {
 
 	echo "$PROMPT" >&2
 	if [ "$DEFAULT" == "y" ]; then
+		DEFAULT_TEXT="yes"
 		DEFAULT="$YES"
 		DEFAULT_CODE=$TRUE
 		echo -n "> (Y/n): " >&2
 	else
+		DEFAULT_TEXT="no"
 		DEFAULT="$NO"
 		DEFAULT_CODE=$FALSE
 		echo -n "> (y/N): " >&2
@@ -451,6 +670,7 @@ function prompt_yn() {
 
 	if is_noninteractive; then
 		# In non-interactive mode, return the default value
+		echo "$DEFAULT_TEXT (default non-interactive)" >&2
 		if [ $QUIET -eq 0 ]; then
 			echo $DEFAULT
 		fi
@@ -469,6 +689,12 @@ function prompt_yn() {
 				echo $NO
 			fi
 			return $FALSE;;
+		"")
+			echo "$DEFAULT_TEXT (default choice)" >&2
+			if [ $QUIET -eq 0 ]; then
+				echo $DEFAULT
+			fi
+			return $DEFAULT_CODE;;
 		*)
 			if [ $QUIET -eq 0 ]; then
 				echo $DEFAULT
@@ -519,16 +745,27 @@ function install_ufw() {
 #   GAME_USER    - User account to install the game under
 #   GAME_DIR     - Directory to install the game into
 #
-# @param $1 Repo Name (e.g., user/repo)
-# @param $2 Branch Name (default: main)
+# @param $1 Application Repo Name (e.g., user/repo)
+# @param $2 Application Branch Name (default: main)
+# @param $3 Warlock Manager Branch to use (default: release-v2)
+#
+# CHANGELOG:
+#   20260319 - Add third option to specify the version of Warlock Manager to use as the base
+#   20260301 - Update to install warlock-manager from github (along with its dependencies) as a pip package
 #
 function install_warlock_manager() {
 	print_header "Performing install_management"
 
 	# Install management console and its dependencies
+
+	# Source URL to download the application from
 	local SRC=""
+	# Github repository of the source application
 	local REPO="$1"
+	# Branch of the source application to download from (default: main)
 	local BRANCH="${2:-main}"
+	# Branch of Warlock Manager to install (default: release-v2)
+	local MANAGER_BRANCH="${3:-release-v2}"
 
 	SRC="https://raw.githubusercontent.com/${REPO}/refs/heads/${BRANCH}/dist/manage.py"
 
@@ -1345,55 +1582,24 @@ EOF
 	touch "$GAME_DIR/.settings.ini"
 	chown $GAME_USER:$GAME_USER "$GAME_DIR/.settings.ini"
 
-	# If a pyenv is required:
+	# A python virtual environment is now required by Warlock-based managers.
 	sudo -u $GAME_USER python3 -m venv "$GAME_DIR/.venv"
 	sudo -u $GAME_USER "$GAME_DIR/.venv/bin/pip" install --upgrade pip
-	sudo -u $GAME_USER "$GAME_DIR/.venv/bin/pip" install pyyaml
+	sudo -u $GAME_USER "$GAME_DIR/.venv/bin/pip" install warlock-manager@git+https://github.com/BitsNBytes25/Warlock-Manager.git@$MANAGER_BRANCH
 }
 
-##
-# Get the operating system version
-#
-# Just the major version number is returned
-#
-function os_version() {
-	if [ "$(uname -s)" == 'FreeBSD' ]; then
-		local _V="$(uname -K)"
-		if [ ${#_V} -eq 6 ]; then
-			echo "${_V:0:1}"
-		elif [ ${#_V} -eq 7 ]; then
-			echo "${_V:0:2}"
-		fi
-
-	elif [ -f '/etc/os-release' ]; then
-		local VERS="$(egrep '^VERSION_ID=' /etc/os-release | sed 's:VERSION_ID=::')"
-
-		if [[ "$VERS" =~ '"' ]]; then
-			# Strip quotes around the OS name
-			VERS="$(echo "$VERS" | sed 's:"::g')"
-		fi
-
-		if [[ "$VERS" =~ \. ]]; then
-			# Remove the decimal point and everything after
-			# Trims "24.04" down to "24"
-			VERS="${VERS/\.*/}"
-		fi
-
-		if [[ "$VERS" =~ "v" ]]; then
-			# Remove the "v" from the version
-			# Trims "v24" down to "24"
-			VERS="${VERS/v/}"
-		fi
-
-		echo "$VERS"
-
-	else
-		echo 0
-	fi
-}
 
 ##
 # Install SteamCMD
+#
+# CHANGELOG:
+#
+#   2025.12.16 - Ensure steam GPG key is readable by apt
+#   2025.11.09 - Switch to using download to support curl/wget abstraction
+#   2025.11.03 - Add support for Debian 13
+#   2024.12.23 - Add support for non-interactive acceptance of Steam license
+#   2024.12.22 - Initial version
+#
 function install_steamcmd() {
 	echo "Installing SteamCMD..."
 
@@ -1446,6 +1652,7 @@ function install_steamcmd() {
 
 		# Install steam repo
 		download http://repo.steampowered.com/steam/archive/stable/steam.gpg /usr/share/keyrings/steam.gpg
+		chmod +r /usr/share/keyrings/steam.gpg
 		echo "deb [arch=amd64,i386 signed-by=/usr/share/keyrings/steam.gpg] http://repo.steampowered.com/steam/ stable steam" > /etc/apt/sources.list.d/steam.list
 
 		# By using this script, you agree to the Steam license agreement at https://store.steampowered.com/subscriber_agreement/
@@ -1490,88 +1697,31 @@ function install_application() {
 		useradd -m -U $GAME_USER
 	fi
 
+	# Ensure the target directory exists and is owned by the game user
+	if [ ! -d "$GAME_DIR" ]; then
+		mkdir -p "$GAME_DIR"
+		chown $GAME_USER:$GAME_USER "$GAME_DIR"
+	fi
+
 	# Preliminary requirements
 	package_install curl sudo python3-venv
 
 	if [ "$FIREWALL" == "1" ]; then
 		if [ "$(get_enabled_firewall)" == "none" ]; then
-			# No firewall installed, go ahead and install UFW
-			install_ufw
+			# No firewall installed, go ahead and install the system default firewall
+			firewall_install
 		fi
 	fi
-
-	[ -e "$GAME_DIR/AppFiles" ] || sudo -u $GAME_USER mkdir -p "$GAME_DIR/AppFiles"
 
 	install_steamcmd
 	
 	# Install the management script
-	install_warlock_manager "$REPO" "$BRANCH"
-	sudo -u $GAME_USER $GAME_DIR/.venv/bin/pip install rcon
+	install_warlock_manager "$REPO" "$BRANCH" "main"
 
 	# Install installer (this script) for uninstallation or manual work
 	download "https://raw.githubusercontent.com/${REPO}/refs/heads/${BRANCH}/dist/installer.sh" "$GAME_DIR/installer.sh"
 	chmod +x "$GAME_DIR/installer.sh"
 	chown $GAME_USER:$GAME_USER "$GAME_DIR/installer.sh"
-	
-	# Use the management script to install the game server
-	if ! $GAME_DIR/manage.py --update; then
-		echo "Could not install $GAME_DESC, exiting" >&2
-		exit 1
-	fi
-	
-	# If you need to configure the firewall for this game service here,
-	# ensure you include the following header
-	# Ideally the management script should handle this if possible to provide the operator with an easy way to change the port.
-	#  # scriptlet:_common/firewall_allow.sh
-	# and then run
-	# firewall_allow --port ${PORT} --udp --comment "${GAME_DESC} Game Port"
-
-	# Install system service file to be loaded by systemd
-    cat > /etc/systemd/system/${GAME_SERVICE}.service <<EOF
-[Unit]
-# DYNAMICALLY GENERATED FILE! Edit at your own risk
-Description=$GAME_DESC
-After=network.target
-
-[Service]
-Type=simple
-LimitNOFILE=10000
-User=$GAME_USER
-Group=$GAME_USER
-Sockets=zomboid.socket
-StandardInput=socket
-StandardOutput=journal
-StandardError=journal
-WorkingDirectory=${GAME_DIR}/AppFiles
-Environment=XDG_RUNTIME_DIR=/run/user/$(id -u $GAME_USER)
-Environment=PATH="${GAME_DIR}/AppFiles/jre64/bin:/usr/bin:/bin"
-Environment=LD_LIBRARY_PATH="${GAME_DIR}/AppFiles/linux64:${GAME_DIR}/AppFiles/natives:${GAME_DIR}/AppFiles:${GAME_DIR}/AppFiles/jre64/lib/server"
-Environment=LD_PRELOAD="libjsig.so"
-# Only required for games which utilize Proton
-#Environment="STEAM_COMPAT_CLIENT_INSTALL_PATH=$STEAM_DIR"
-ExecStart=$GAME_DIR/AppFiles/ProjectZomboid64
-ExecStop=$GAME_DIR/manage.py --pre-stop --service ${GAME_SERVICE}
-ExecStartPost=$GAME_DIR/manage.py --post-start --service ${GAME_SERVICE}
-Restart=on-failure
-RestartSec=1800s
-TimeoutStartSec=600s
-
-[Install]
-WantedBy=multi-user.target
-EOF
-	cat > /etc/systemd/system/${GAME_SERVICE}.socket <<EOF
-[Unit]
-# DYNAMICALLY GENERATED FILE! Edit at your own risk
-BindsTo=zomboid.service
-
-[Socket]
-ListenFIFO=/var/run/$GAME_SERVICE.socket
-Service=$GAME_SERVICE.service
-RemoveOnStop=true
-SocketMode=0660
-SocketUser=$GAME_USER
-EOF
-    systemctl daemon-reload
 
 	if [ -n "$WARLOCK_GUID" ]; then
 		# Register Warlock
@@ -1584,7 +1734,14 @@ function postinstall() {
 	print_header "Performing postinstall"
 
 	# First run setup
-	$GAME_DIR/manage.py --first-run
+	$GAME_DIR/manage.py first-run
+}
+
+##
+# Perform any steps necessary for upgrading an existing installation.
+#
+function upgrade_application() {
+	print_header "Existing installation detected, performing upgrade"
 }
 
 ##
@@ -1598,14 +1755,7 @@ function postinstall() {
 function uninstall_application() {
 	print_header "Performing uninstall_application"
 
-	systemctl disable $GAME_SERVICE
-	systemctl stop $GAME_SERVICE
-
-	# Service files
-	[ -e "/etc/systemd/system/${GAME_SERVICE}.service" ] && rm "/etc/systemd/system/${GAME_SERVICE}.service"
-
-	# Game files
-	[ -d "$GAME_DIR" ] && rm -rf "$GAME_DIR/AppFiles"
+	$GAME_DIR/manage.py remove --confirm
 
 	# Management scripts
 	[ -e "$GAME_DIR/manage.py" ] && rm "$GAME_DIR/manage.py"
@@ -1624,16 +1774,28 @@ function uninstall_application() {
 
 if [ $MODE_UNINSTALL -eq 1 ]; then
 	MODE="uninstall"
+elif [ -e "$GAME_DIR/AppFiles" ]; then
+	MODE="reinstall"
 else
 	# Default to install mode
 	MODE="install"
 fi
 
 
-if systemctl -q is-active $GAME_SERVICE; then
-	echo "$GAME_DESC service is currently running, please stop it before running this installer."
-	echo "You can do this with: sudo systemctl stop $GAME_SERVICE"
-	exit 1
+if [ -e "$GAME_DIR/Environments" ]; then
+	# Check for existing service files to determine if the service is running.
+	# This is important to prevent conflicts with the installer trying to modify files while the service is running.
+	for envfile in "$GAME_DIR/Environments/"*.env; do
+		SERVICE=$(basename "$envfile" .env)
+		# If there are no services, this will just be '*.env'.
+		if [ "$SERVICE" != "*" ]; then
+			if systemctl -q is-active $SERVICE; then
+				echo "$GAME_DESC service is currently running, please stop all instances before running this installer."
+				echo "You can do this with: sudo systemctl stop $SERVICE"
+				exit 1
+			fi
+		fi
+	done
 fi
 
 if [ -n "$OVERRIDE_DIR" ]; then
@@ -1659,11 +1821,6 @@ else
 	echo "Using default installation directory of ${GAME_DIR}"
 fi
 
-if [ -e "/etc/systemd/system/${GAME_SERVICE}.service" ]; then
-	EXISTING=1
-else
-	EXISTING=0
-fi
 
 ############################################
 ## Installer
@@ -1673,12 +1830,28 @@ fi
 if [ "$MODE" == "install" ]; then
 
 	if [ $SKIP_FIREWALL -eq 1 ]; then
+		echo "Firewall explictly disabled, skipping installation of a system firewall"
 		FIREWALL=0
-	elif [ $EXISTING -eq 0 ] && prompt_yn -q --default-yes "Install system firewall?"; then
+	elif prompt_yn -q --default-yes "Install system firewall?"; then
 		FIREWALL=1
 	else
 		FIREWALL=0
 	fi
+
+	install_application
+
+	postinstall
+
+	# Print some instructions and useful tips
+    print_header "$GAME_DESC Installation Complete"
+fi
+
+# Operations needed to be performed during a reinstallation / upgrade
+if [ "$MODE" == "reinstall" ]; then
+
+	FIREWALL=0
+
+	upgrade_application
 
 	install_application
 
@@ -1699,7 +1872,7 @@ if [ "$MODE" == "uninstall" ]; then
 	fi
 
 	if prompt_yn -q --default-yes "Perform a backup before everything is wiped?"; then
-		$GAME_DIR/manage.py --backup
+		$GAME_DIR/manage.py backup
 	fi
 
 	uninstall_application

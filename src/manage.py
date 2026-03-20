@@ -1,32 +1,43 @@
 #!/usr/bin/env python3
-import pwd
+import os
+
+# To allow running as a standalone script without installing the package, include the venv path for imports.
+# This will set the include path for this path to .venv to allow packages installed therein to be utilized.
+#
+# IMPORTANT - any imports that are needed for the script to run must be after this,
+# otherwise the imports will fail when running as a standalone script.
+# import:org_python/venv_path_include.py
+
+import logging
 import random
 import string
-from scriptlets._common.firewall_allow import *
-from scriptlets._common.firewall_remove import *
-from scriptlets.bz_eval_tui.prompt_yn import *
-from scriptlets.bz_eval_tui.prompt_text import *
-from scriptlets.bz_eval_tui.table import *
-from scriptlets.bz_eval_tui.print_header import *
-from scriptlets._common.get_wan_ip import *
-# import:org_python/venv_path_include.py
-import yaml
-# Game application source - what type of game is being installed?
-# from scriptlets.warlock.base_app import *
-from scriptlets.warlock.steam_app import *
-# Game services are usually either an RCON, HTTP, or base type service.
-# Include the necessary type and remove the rest.
-# from scriptlets.warlock.base_service import *
-# from scriptlets.warlock.http_service import *
-from scriptlets.warlock.rcon_service import *
-from scriptlets.warlock.ini_config import *
-from scriptlets.warlock.properties_config import *
-from scriptlets.warlock.default_run import *
 
-# For games that use Steam, this provides a quick method for checking for updates
-# from scriptlets.steam.steamcmd_check_app_update import *
+# Import the appropriate type of handler for the game installer.
+# Common options are:
+# from warlock_manager.apps.base_app import BaseApp
+from warlock_manager.apps.steam_app import SteamApp
 
-here = os.path.dirname(os.path.realpath(__file__))
+# Import the appropriate type of handler for the game services.
+# Common options are:
+# from warlock_manager.services.base_service import BaseService
+# from warlock_manager.services.rcon_service import RCONService
+from warlock_manager.services.socket_service import SocketService
+# from warlock_manager.services.http_service import HTTPService
+
+# Import the various configuration handlers used by this game.
+# Common options are:
+# from warlock_manager.config.cli_config import CLIConfig
+from warlock_manager.config.ini_config import INIConfig
+# from warlock_manager.config.json_config import JSONConfig
+from warlock_manager.config.properties_config import PropertiesConfig
+# from warlock_manager.config.unreal_config import UnrealConfig
+
+# Load the application runner responsible for interfacing with CLI arguments
+# and providing default functionality for running the manager.
+from warlock_manager.libs.app_runner import app_runner
+
+# If your script manages the firewall, (recommended), import the Firewall library
+from warlock_manager.libs.firewall import Firewall
 
 
 class GameApp(SteamApp):
@@ -39,37 +50,43 @@ class GameApp(SteamApp):
 
 		self.name = 'Zomboid'
 		self.desc = 'Project Zomboid'
+		self.service_handler = GameService
 		self.steam_id = '380870'
-		self.services = ('zomboid',)
+		self.service_prefix = 'zomboid-'
 
 		self.configs = {
-			'manager': INIConfig('manager', os.path.join(here, '.settings.ini'))
+			'manager': INIConfig('manager', os.path.join(self.get_app_directory(), '.settings.ini'))
 		}
 		self.load()
 
 		self.steam_branch = self.get_option_value('Steam Branch')
 
-	def get_save_files(self) -> Union[list, None]:
+	def first_run(self) -> bool:
 		"""
-		Get a list of save files / directories for the game server
+		Perform any first-run configuration needed for this game
 
 		:return:
 		"""
-		return [
-			'db',
-			'Saves',
-			'Server/servertest_SandboxVars.lua',
-			'Server/servertest_spawnpoints.lua',
-			'Server/servertest_spawnregions.lua'
-		]
+		if os.geteuid() != 0:
+			logging.error('Please run this script with sudo to perform first-run configuration.')
+			return False
 
-	def get_save_directory(self) -> Union[str, None]:
-		"""
-		Get the save directory for the game server
+		super().first_run()
 
-		:return:
-		"""
-		return here
+		# Install the game with Steam.
+		# It's a good idea to ensure the game is installed on first run.
+		self.update()
+
+		# First run is a great time to auto-create some services for this game too
+		services = self.get_services()
+		if len(services) == 0:
+			# No services detected, create one.
+			logging.info('No services detected, creating one...')
+			self.create_service('zomboid-server')
+		else:
+			logging.info('Detected %d services, skipping first-run service creation.' % len(services))
+
+		return True
 
 	def check_update_available(self) -> bool:
 		"""
@@ -90,7 +107,7 @@ class GameApp(SteamApp):
 		return False
 
 
-class GameService(RCONService):
+class GameService(SocketService):
 	"""
 	Service definition and handler
 	"""
@@ -100,12 +117,31 @@ class GameService(RCONService):
 		:param file:
 		"""
 		super().__init__(service, game)
-		self.service = service
-		self.game = game
 		self.configs = {
-			'zomboid': PropertiesConfig('zomboid', os.path.join(here, 'Server/servertest.ini'))
+			'zomboid': PropertiesConfig('zomboid', os.path.join(self.get_app_directory(), 'Server/servertest.ini'))
 		}
 		self.load()
+
+	def get_executable(self) -> str:
+		"""
+		Get the full executable for this game service
+		:return:
+		"""
+		return self.get_app_directory() + '/ProjectZomboid64'
+
+	def get_save_files(self) -> list | None:
+		"""
+		Get a list of save files / directories for the game server
+
+		:return:
+		"""
+		return [
+			'db',
+			'Saves',
+			'Server/servertest_SandboxVars.lua',
+			'Server/servertest_spawnpoints.lua',
+			'Server/servertest_spawnregions.lua'
+		]
 
 	def option_value_updated(self, option: str, previous_value, new_value):
 		"""
@@ -120,68 +156,38 @@ class GameService(RCONService):
 		if option == 'Default Port':
 			# Update firewall for game port change
 			if previous_value:
-				firewall_remove(int(previous_value), 'tcp')
-			firewall_allow(int(new_value), 'udp', '%s data port' % self.game.desc)
+				Firewall.remove(int(previous_value), 'tcp')
+			Firewall.allow(int(new_value), 'udp', '%s data port' % self.game.desc)
 		elif option == 'UDP Port':
 			# Update firewall for game port change
 			if previous_value:
-				firewall_remove(int(previous_value), 'udp')
-			firewall_allow(int(new_value), 'udp', '%s game port' % self.game.desc)
+				Firewall.remove(int(previous_value), 'udp')
+			Firewall.allow(int(new_value), 'udp', '%s game port' % self.game.desc)
 
-	def is_api_enabled(self) -> bool:
-		"""
-		Check if API is enabled for this service
-		:return:
-		"""
-		return (
-			self.get_option_value('RCON Port') != '' and
-			self.get_option_value('RCON Password') != ''
-		)
-
-	def get_api_port(self) -> int:
-		"""
-		Get the API port from the service configuration
-		:return:
-		"""
-		return self.get_option_value('RCON Port')
-
-	def get_api_password(self) -> str:
-		"""
-		Get the API password from the service configuration
-		:return:
-		"""
-		return self.get_option_value('RCON Password')
-
-	def get_players(self) -> Union[list, None]:
+	def get_players(self) -> list | None:
 		"""
 		Get a list of current players on the server, or None if the API is unavailable
 		:return:
 		"""
-		try:
-			ret = self._api_cmd('players')
-			# ret should contain 'Players connected (N):'.
-			if ret is None:
-				return None
-			else:
-				players = []
-				lines = ret.splitlines()
-				for line in lines:
-					if line.startswith('-'):
-						players.append({'player_name': line[1:]})
-				return players
-		except:
-			return None
 
-	def get_player_count(self) -> Union[int, None]:
-		"""
-		Get the current player count on the server, or None if the API is unavailable
-		:return:
-		"""
-		players = self.get_players()
-		if players is not None:
-			return len(players)
-		else:
-			return None
+		# Expected output:
+		# Mar 20 17:41:04 linuxgames ProjectZomboid64[2742986]: LOG  : General      f:128, t:1774028464881, st:9,504,883,591> Players connected (1):
+		# Mar 20 17:41:04 linuxgames ProjectZomboid64[2742986]: -admin
+		self.cmd('players')
+		players = []
+		start_players = False
+		def watch(line):
+			nonlocal start_players
+			nonlocal players
+			if 'Players connected' in line:
+				start_players = True
+				return True
+			if start_players and ': -' in line:
+				players.append({'player_name': line[line.find(': -')+2:]})
+				return True
+		self.watch(watch)
+
+		return players if start_players else None
 
 	def get_player_max(self) -> int:
 		"""
@@ -197,7 +203,7 @@ class GameService(RCONService):
 		"""
 		return self.get_option_value('Public Name')
 
-	def get_port(self) -> Union[int, None]:
+	def get_port(self) -> int | None:
 		"""
 		Get the primary port of the service, or None if not applicable
 		:return:
@@ -219,14 +225,14 @@ class GameService(RCONService):
 		:param message:
 		:return:
 		"""
-		self._api_cmd('servermsg "%s"' % message.replace('"', "'"))
+		self.cmd('servermsg "%s"' % message.replace('"', "'"))
 
 	def save_world(self):
 		"""
 		Force the game server to save the world via the game API
 		:return:
 		"""
-		self._api_cmd('save')
+		self.cmd('save')
 
 	def get_port_definitions(self) -> list:
 		"""
@@ -242,29 +248,46 @@ class GameService(RCONService):
 	def post_start(self) -> bool:
 		# Start the service for the first time to generate default config files
 		# and to let the server prompt for the first run options.
-		if os.path.exists(os.path.join(here, 'admin.passwd')):
-			with open(os.path.join(here, 'admin.passwd'), 'r') as f:
+		#
+		# The server prompts for admin password on first run
+		if os.path.exists(os.path.join(self.get_app_directory(), 'admin.passwd')):
+			with open(os.path.join(self.get_app_directory(), 'admin.passwd'), 'r') as f:
 				random_password = f.read().strip()
 		else:
 			random_password = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
-			with open(os.path.join(here, 'admin.passwd'), 'w') as f:
+			with open(os.path.join(self.get_app_directory(), 'admin.passwd'), 'w') as f:
 				f.write(random_password)
+			self.game.ensure_file_ownership(os.path.join(self.get_app_directory(), 'admin.passwd'))
 
-		counter = 0
-		while counter < 60:
-			counter += 1
-			log = self.get_logs(1)
-			logs = self.get_logs(10)
+		password_asked = False
 
-			# The server prompts for admin password on first run
-			if 'Enter new administrator password:' in log or 'Confirm the password:' in log:
-				with open('/var/run/zomboid.socket', 'w') as f:
-					f.write(random_password + '\n')
-			elif '##########' in logs:
+
+		def watch1(line):
+			nonlocal random_password
+			nonlocal password_asked
+			if '##########' in line:
 				# Generally indicates the server has started and is in the final steps of loading.
-				break
+				return False
+			if 'Enter new administrator password:' in line:
+				# Password asked in the terminal; send it via cmd
+				password_asked = True
+				self.cmd(random_password)
+				return False
 
-			time.sleep(1)
+
+		def watch2(line):
+			nonlocal random_password
+			if '##########' in line:
+				# Generally indicates the server has started and is in the final steps of loading.
+				return False
+			if 'Confirm the password:' in line:
+				# Password confirmation asked in the terminal; send it via cmd
+				self.cmd(random_password)
+				return False
+
+		self.watch(watch1, 60)
+		if password_asked:
+			self.watch(watch2)
 
 		return super().post_start()
 
@@ -277,66 +300,25 @@ class GameService(RCONService):
 		opt = self.get_option_value('Mod Workshop IDs')
 		if opt == '' or opt is None:
 			# If there are no mods installed, nothing to check.
-			print('No mods installed, skipping mod update check.', file=sys.stderr)
 			return False
+
+		update_needed = False
+
+
+		def watch(line):
+			nonlocal update_needed
+			if 'CheckModsNeedUpdate: Mods need update' in line:
+				update_needed = True
+				return False
+			if 'CheckModsNeedUpdate: Mods updated' in line:
+				return False
 
 		# Ask the server via RCON if there are mods that need updating
-		self._api_cmd('checkModsNeedUpdate')
-		time.sleep(2)
+		self.cmd('checkModsNeedUpdate')
+		self.watch(watch)
+		return update_needed
 
-		# This will not return anything useful, so we need to check the logs for the result.
-		update_needed = None
-		logs = self.get_logs(20)
-		for line in logs.splitlines():
-			# CheckModsNeedUpdate: Mods updated
-			# CheckModsNeedUpdate: Mods need update
-			if 'CheckModsNeedUpdate: Mods need update' in line:
-				print('Mod updates are available.', file=sys.stderr)
-				update_needed = True
-				break
-			elif 'CheckModsNeedUpdate: Mods updated' in line:
-				print('All mods are up to date.', file=sys.stderr)
-				update_needed = False
-				break
-
-		if update_needed is None:
-			# Unable to determine mod update status
-			print('Unable to determine mod update status from server logs.', file=sys.stderr)
-			return False
-		else:
-			return update_needed
-
-
-def menu_first_run(game: GameApp):
-	"""
-	Perform first-run configuration for setting up the game server initially
-
-	:param game:
-	:return:
-	"""
-	print_header('First Run Configuration')
-
-	if os.geteuid() != 0:
-		print('ERROR: Please run this script with sudo to perform first-run configuration.')
-		sys.exit(1)
-
-	svc = game.get_services()[0]
-
-	if os.path.exists(os.path.join(here, 'admin.passwd')):
-		with open(os.path.join(here, 'admin.passwd'), 'r') as f:
-			random_password = f.read().strip()
-	else:
-		random_password = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
-		with open(os.path.join(here, 'admin.passwd'), 'w') as f:
-			f.write(random_password)
-
-	# Allow default game ports
-	svc.option_ensure_set('Default Port')
-	svc.option_ensure_set('UDP Port')
-	if not svc.option_has_value('RCON Password'):
-		# Generate a random password for RCON
-		svc.set_option('RCON Password', random_password)
 
 if __name__ == '__main__':
-	game = GameApp()
-	run_manager(game)
+	app = app_runner(GameApp())
+	app()
