@@ -156,6 +156,33 @@ class GameService(SocketService):
 			'Server/servertest_spawnregions.lua'
 		]
 
+	def get_commands(self) -> None | list[str]:
+		"""
+		Get a list of available commands for this service
+
+		:return:
+		"""
+		in_cmd = False
+		commands = []
+		def watch(line):
+			nonlocal in_cmd
+			if 'List of server commands' in line:
+				in_cmd = True
+				return True
+			if in_cmd and ': * ' in line:
+				cmd = line[line.find(': * ')+3:]
+				if ' : ' in cmd:
+					cmd = cmd[:cmd.find(' : ')]
+					help = cmd[cmd.find(' : ')+3:]
+					commands.append({'cmd': cmd, 'help': help})
+				else:
+					commands.append(cmd)
+				return True
+
+		self.cmd('help')
+		self.watch(watch)
+		return commands
+
 	def option_value_updated(self, option: str, previous_value, new_value):
 		"""
 		Handle any special actions needed when an option value is updated
