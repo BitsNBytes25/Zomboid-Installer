@@ -786,15 +786,6 @@ manager:
     type: str
     default: public
     help: "The Steam branch to install the server from (e.g., stable, experimental)."
-    options:
-      - public
-      - unstable
-      - legacy_41_78_7
-      - legacy41_77
-      - legacy41_73
-      - legacy_41_71
-      - legacy41_68
-      - legacy40
   - name: Steam Branch Password
     section: Steam
     key: steam_branch_password

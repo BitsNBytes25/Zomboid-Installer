@@ -39,6 +39,9 @@ from warlock_manager.libs.app_runner import app_runner
 # If your script manages the firewall, (recommended), import the Firewall library
 from warlock_manager.libs.firewall import Firewall
 
+# Utilities provided by Warlock that are common to many applications
+from warlock_manager.libs import utils
+
 
 class GameApp(SteamApp):
 	"""
@@ -55,7 +58,7 @@ class GameApp(SteamApp):
 		self.service_prefix = 'zomboid-'
 
 		self.configs = {
-			'manager': INIConfig('manager', os.path.join(self.get_app_directory(), '.settings.ini'))
+			'manager': INIConfig('manager', os.path.join(utils.get_app_directory(), '.settings.ini'))
 		}
 		self.load()
 
@@ -76,6 +79,8 @@ class GameApp(SteamApp):
 		# Install the game with Steam.
 		# It's a good idea to ensure the game is installed on first run.
 		self.update()
+
+		utils.makedirs(os.path.join(utils.get_app_directory(), 'mods'))
 
 		# First run is a great time to auto-create some services for this game too
 		services = self.get_services()
@@ -106,6 +111,18 @@ class GameApp(SteamApp):
 
 		return False
 
+	def get_option_options(self, option: str) -> list:
+		"""
+		Get the list of possible options for a configuration option
+		:param option:
+		:return:
+		"""
+
+		if option == 'Steam Branch':
+			return self.get_steam_branches()
+		else:
+			return super().get_option_options(option)
+
 
 class GameService(SocketService):
 	"""
@@ -128,6 +145,21 @@ class GameService(SocketService):
 		:return:
 		"""
 		return self.get_app_directory() + '/ProjectZomboid64'
+
+	def get_environment(self) -> dict:
+		"""
+		Get the environment variables for this service as a dictionary
+
+		:return:
+		"""
+		d = self.get_app_directory()
+		return {
+			'XDG_RUNTIME_DIR': '/run/user/%s' % utils.get_app_uid(),
+			'PATH': f'${d}/jre64/bin:/usr/bin:/bin',
+			'LD_LIBRARY_PATH': f'${d}/linux64:${d}/natives:${d}:${d}/jre64/lib/server',
+			'LD_PRELOAD': 'libjsig.so'
+		}
+
 
 	def get_save_files(self) -> list | None:
 		"""
@@ -272,7 +304,7 @@ class GameService(SocketService):
 			('RCON Port', 'tcp', '%s RCON port' % self.game.desc)
 		]
 
-	def post_start(self) -> bool:
+	def zzpost_start(self) -> bool:
 		# Start the service for the first time to generate default config files
 		# and to let the server prompt for the first run options.
 		#
@@ -287,6 +319,7 @@ class GameService(SocketService):
 			self.game.ensure_file_ownership(os.path.join(self.get_app_directory(), 'admin.passwd'))
 
 		password_asked = False
+		logging.info('Running post_start')
 
 
 		def watch1(line):
@@ -298,6 +331,7 @@ class GameService(SocketService):
 			if 'Enter new administrator password:' in line:
 				# Password asked in the terminal; send it via cmd
 				password_asked = True
+				logging.info('Server asked for password once')
 				self.cmd(random_password)
 				return False
 
@@ -309,6 +343,7 @@ class GameService(SocketService):
 				return False
 			if 'Confirm the password:' in line:
 				# Password confirmation asked in the terminal; send it via cmd
+				logging.info('Server asked for password twice')
 				self.cmd(random_password)
 				return False
 
