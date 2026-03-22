@@ -180,6 +180,16 @@ class GameService(SocketService):
 			'LD_PRELOAD': 'libjsig.so'
 		}
 
+	def get_save_directory(self) -> str:
+		"""
+		Get the parent directory that contains the Save files for this game
+
+		Zomboid saves are stored in the user's home directory
+
+		:return:
+		"""
+		return os.path.join(utils.get_home_directory(), 'Zomboid')
+
 
 	def get_save_files(self) -> list | None:
 		"""
@@ -211,7 +221,7 @@ class GameService(SocketService):
 			if in_cmd and ': * ' in line:
 				cmd = line[line.find(': * ')+3:]
 				if ' : ' in cmd:
-					command = cmd[:cmd.find(' : ')]
+					command = cmd[:cmd.find(' : ')].strip()
 					help = cmd[cmd.find(' : ')+3:]
 					commands.append({'cmd': command, 'help': help})
 				else:
