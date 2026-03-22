@@ -56,6 +56,7 @@ class GameApp(SteamApp):
 		self.service_handler = GameService
 		self.steam_id = '380870'
 		self.service_prefix = 'zomboid-'
+		self.disabled_features = {'create_service'}
 
 		self.configs = {
 			'manager': INIConfig('manager', os.path.join(utils.get_app_directory(), '.settings.ini'))
@@ -152,11 +153,17 @@ class GameService(SocketService):
 
 		:return:
 		"""
-		d = self.get_app_directory()
+		game_dir = self.get_app_directory()
+		include_paths = [
+			game_dir + '/linux64',
+			game_dir + '/natives',
+			game_dir + '/jre64/lib/server'
+		]
+
 		return {
 			'XDG_RUNTIME_DIR': '/run/user/%s' % utils.get_app_uid(),
-			'PATH': f'${d}/jre64/bin:/usr/bin:/bin',
-			'LD_LIBRARY_PATH': f'${d}/linux64:${d}/natives:${d}:${d}/jre64/lib/server',
+			'PATH': f'${game_dir}/jre64/bin:/usr/bin:/bin',
+			'LD_LIBRARY_PATH': ':'.join(include_paths),
 			'LD_PRELOAD': 'libjsig.so'
 		}
 
@@ -191,9 +198,9 @@ class GameService(SocketService):
 			if in_cmd and ': * ' in line:
 				cmd = line[line.find(': * ')+3:]
 				if ' : ' in cmd:
-					cmd = cmd[:cmd.find(' : ')]
+					command = cmd[:cmd.find(' : ')]
 					help = cmd[cmd.find(' : ')+3:]
-					commands.append({'cmd': cmd, 'help': help})
+					commands.append({'cmd': command, 'help': help})
 				else:
 					commands.append(cmd)
 				return True
@@ -242,7 +249,7 @@ class GameService(SocketService):
 				start_players = True
 				return True
 			if start_players and ': -' in line:
-				players.append({'player_name': line[line.find(': -')+2:]})
+				players.append({'player_name': line[line.find(': -')+3:]})
 				return True
 		self.watch(watch)
 
@@ -304,7 +311,7 @@ class GameService(SocketService):
 			('RCON Port', 'tcp', '%s RCON port' % self.game.desc)
 		]
 
-	def zzpost_start(self) -> bool:
+	def post_start(self) -> bool:
 		# Start the service for the first time to generate default config files
 		# and to let the server prompt for the first run options.
 		#
@@ -316,35 +323,36 @@ class GameService(SocketService):
 			random_password = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
 			with open(os.path.join(self.get_app_directory(), 'admin.passwd'), 'w') as f:
 				f.write(random_password)
-			self.game.ensure_file_ownership(os.path.join(self.get_app_directory(), 'admin.passwd'))
+			utils.ensure_file_ownership(os.path.join(self.get_app_directory(), 'admin.passwd'))
 
+		logging.debug('Checking for first-run password prompt...')
 		password_asked = False
-		logging.info('Running post_start')
-
 
 		def watch1(line):
 			nonlocal random_password
 			nonlocal password_asked
-			if '##########' in line:
+			if 'Initialising Server Systems' in line:
 				# Generally indicates the server has started and is in the final steps of loading.
+				logging.debug('Server initialization started, dropping out of password check')
 				return False
 			if 'Enter new administrator password:' in line:
 				# Password asked in the terminal; send it via cmd
 				password_asked = True
-				logging.info('Server asked for password once')
-				self.cmd(random_password)
+				logging.debug('Server asked for password once!  Sending password.')
+				self.write_socket(random_password)
 				return False
 
 
 		def watch2(line):
 			nonlocal random_password
-			if '##########' in line:
+			if 'Initialising Server Systems' in line:
 				# Generally indicates the server has started and is in the final steps of loading.
+				logging.debug('Server initialization started, dropping out of password check')
 				return False
 			if 'Confirm the password:' in line:
 				# Password confirmation asked in the terminal; send it via cmd
-				logging.info('Server asked for password twice')
-				self.cmd(random_password)
+				logging.debug('Server asked for password twice')
+				self.write_socket(random_password)
 				return False
 
 		self.watch(watch1, 60)
