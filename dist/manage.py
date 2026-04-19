@@ -25,6 +25,7 @@ from warlock_manager.config.properties_config import PropertiesConfig
 from warlock_manager.libs.app_runner import app_runner
 from warlock_manager.libs.firewall import Firewall
 from warlock_manager.libs import utils
+from warlock_manager.mods.warlock_nexus_mod import WarlockNexusMod
 # To allow running as a standalone script without installing the package, include the venv path for imports.
 # This will set the include path for this path to .venv to allow packages installed therein to be utilized.
 #
@@ -55,6 +56,81 @@ from warlock_manager.libs import utils
 
 # Utilities provided by Warlock that are common to many applications
 
+# Select the baseline for mod support
+# from warlock_manager.mods.base_mod import BaseMod
+
+
+class GameMod(WarlockNexusMod):
+	def __init__(self):
+		super().__init__()
+
+		self.workshop_id : int | None = None
+		"""
+		Steam Workshop ID of this mod, only applicable after explode has been called.
+		"""
+
+	def to_dict(self) -> dict:
+		"""
+		Returns a dict representation of the mod.
+		"""
+		ret = super().to_dict()
+		# Add objects from this override
+		ret['workshop_id'] = self.workshop_id
+		return ret
+
+	def explode_mods(self) -> 'list[GameMod]':
+		"""
+		Project Zomboid workshop items have their Mod ID listed in the description of the mod.
+		This allows a mod developer to have a single mod with multiple functions.
+
+		Explode the primary Steam mod into separate mod functions, which individually can be installed.
+		:return:
+		"""
+
+		ret = []
+		for line in self.description.split('\n'):
+			line = line.strip()
+			if line.startswith('Mod ID: '):
+				# Mod ID: 1234567890
+				clone = GameMod.from_dict(self.to_dict())
+				clone.workshop_id = int(self.id)
+				k = line[8:]
+				if k.startswith('\\'):
+					# Mods in 42+ technically require a backslash, but we can skip it here.
+					k = k[1:]
+				clone.id = 'mod:' + k
+				ret.append(clone)
+			elif line.startswith('Map Folder: '):
+				# Map Folder: Some Map 123
+				clone = GameMod.from_dict(self.to_dict())
+				clone.workshop_id = int(self.id)
+				k = line[12:]
+				clone.id = 'map:' + k
+				ret.append(clone)
+
+		return ret
+
+	@classmethod
+	def get_mod(cls, source: 'BaseService', provider: str | None, mod_id: str | int) -> 'GameMod | None':
+		"""
+		Get a specific mod by ID, must be a sponsor to use this.
+
+		:param source:   Source game service to use for reference
+		:param provider: Mod provider, e.g. 'curseforge'
+		:param mod_id:   Mod ID
+		:return:
+		"""
+		# In this game, a mod requested by a string indicates it's already resolved locally.
+		# an int means it's coming directly from Steam.
+		if isinstance(mod_id, int):
+			return super().get_mod(source, provider, mod_id)
+		else:
+			# Search through local mods
+			mods = cls.get_registered_mods()
+			for mod in mods:
+				if mod.id == mod_id and mod.provider is None:
+					return mod
+			return None
 
 class GameApp(SteamApp):
 	"""
@@ -67,6 +143,7 @@ class GameApp(SteamApp):
 		self.name = 'Zomboid'
 		self.desc = 'Project Zomboid'
 		self.service_handler = GameService
+		self.mod_handler = GameMod
 		self.steam_id = '380870'
 		self.service_prefix = 'zomboid-'
 		self.disabled_features = {'create_service'}
@@ -75,8 +152,6 @@ class GameApp(SteamApp):
 			'manager': INIConfig('manager', os.path.join(utils.get_app_directory(), '.settings.ini'))
 		}
 		self.load()
-
-		self.steam_branch = self.get_option_value('Steam Branch')
 
 	def first_run(self) -> bool:
 		"""
@@ -103,7 +178,10 @@ class GameApp(SteamApp):
 			logging.info('No services detected, creating one...')
 			self.create_service('zomboid-server')
 		else:
-			logging.info('Detected %d services, skipping first-run service creation.' % len(services))
+			for service in services:
+				logging.info('Ensuring %s service file is on latest format' % service.service)
+				service.build_systemd_config()
+				service.reload()
 
 		return True
 
@@ -124,18 +202,6 @@ class GameApp(SteamApp):
 				return True
 
 		return False
-
-	def get_option_options(self, option: str) -> list:
-		"""
-		Get the list of possible options for a configuration option
-		:param option:
-		:return:
-		"""
-
-		if option == 'Steam Branch':
-			return self.get_steam_branches()
-		else:
-			return super().get_option_options(option)
 
 
 class GameService(SocketService):
@@ -326,12 +392,29 @@ class GameService(SocketService):
 	def get_port_definitions(self) -> list:
 		"""
 		Get a list of port definitions for this service
+
+		Each entry in the returned list should contain 3 or 4 items:
+
+		* Config name or integer of port (for non-definable ports)
+		* 'UDP' or 'TCP' to indicate protocol
+		* Short description of the port purpose
+		* Optional boolean to indicate if this is an optional port (ie: not checked at startup)
+
+		Example:
+
+		```python
+		return [
+			('Game Port', 'UDP', 'Primary game port for clients to connect to', False),
+			(25565, 'TCP', 'RCON port, statically assigned and cannot be changed', True)
+		]
+		```
+
 		:return:
 		"""
 		return [
 			('Default Port', 'udp', '%s data port' % self.game.desc),
 			('UDP Port', 'udp', '%s game port' % self.game.desc),
-			('RCON Port', 'tcp', '%s RCON port' % self.game.desc)
+			('RCON Port', 'tcp', '%s RCON port' % self.game.desc, True)
 		]
 
 	def post_start(self) -> bool:
@@ -410,6 +493,132 @@ class GameService(SocketService):
 		self.cmd('checkModsNeedUpdate')
 		self.watch(watch)
 		return update_needed
+
+	def get_enabled_mods(self) -> list[GameMod]:
+		"""
+		Get all enabled mods that are locally available on this service
+
+		:return:
+		"""
+
+		# This game stores enabled mod IDs in WorkshopItems (which is mapped to Mod Workshop IDs)
+		# but the actual lookups should be done from Mod Names (Mods) and Mod Maps (Map).
+		# First, lookup the Steam ID of the mod so we have the necessary metadata.
+		workshop_ids = self.get_option_value('Mod Workshop IDs')
+		if workshop_ids == '' or workshop_ids is None:
+			return []
+		raw_mods = []
+		workshop_ids = workshop_ids.split(';')
+		for workshop_id in workshop_ids:
+			mod = GameMod.get_mod(self, 'steam', workshop_id)
+			for sub_mod in mod.explode_mods():
+				raw_mods.append(sub_mod)
+		# raw_mods now contains all the available Mod Names and Map Names across workshop items installed
+
+		ret = []
+		opt = self.get_option_value('Mod Names')
+		if opt != '' and opt is not None:
+			names = opt.split(';')
+			for mod_name in names:
+				if mod_name == '':
+					continue
+				if mod_name.startswith('\\'):
+					# This is probable, but not required here
+					mod_name = mod_name[1:]
+				for raw_mod in raw_mods:
+					if raw_mod.id == 'mod:' + mod_name:
+						ret.append(raw_mod)
+
+		opt = self.get_option_value('Map Names')
+		if opt != '' and opt is not None:
+			maps = opt.split(';')
+			for map_name in maps:
+				if map_name == 'Muldraugh, KY':
+					# This is the vanilla map.
+					continue
+				for raw_mod in raw_mods:
+					if raw_mod.id == 'map:' + map_name:
+						ret.append(raw_mod)
+		return ret
+
+	def rebuild_mods(self, mods: 'list[GameMod]'):
+		"""
+		Rebuild the configuration options based on the incoming mods list.
+
+		:param mods:
+		:return:
+		"""
+		current_maps = self.get_option_value('Map Names').split(';')
+		use_default_map = 'Muldraugh, KY' in current_maps
+
+		new_mods = []
+		new_ids = []
+		new_maps = []
+		for mod in mods:
+			mod.register()
+			mod_type = mod.id[0:3]
+			mod_key = mod.id[4:]
+
+			if mod_type == 'mod' and not mod_key.startswith('\\'):
+				# B42+ requires mods to start with a backslash.
+				mod_key = '\\' + mod_key
+
+			if mod_type == 'map' and mod_key not in new_maps:
+				# This is a map; add it to the list of maps to install.
+				new_maps.append(mod_key)
+			if mod_type == 'mod' and mod_key not in new_mods:
+				# This is a mod; add it to the list of mods to install.
+				new_mods.append(mod_key)
+			if mod.workshop_id not in new_ids:
+				# Every mod will have a Workshop ID, (which may be duplicated if a mod has multiple mods)
+				new_ids.append(mod.workshop_id)
+
+		if use_default_map:
+			new_maps.append('Muldraugh, KY')
+
+		# Save everything back to the game config.
+		self.set_option('Mod Names', ';'.join(new_mods))
+		self.set_option('Mod Workshop IDs', ';'.join(new_ids))
+		self.set_option('Map Names', ';'.join(new_maps))
+
+	def add_mod(self, mod: 'GameMod', force: bool = False) -> bool:
+		"""
+		Install a mod
+
+		:param mod: Mod to install
+		:param force: Force the installation even if the mod is already installed
+		:return:
+		"""
+		# Split the incoming mod into its sub_mod parts
+		mods = mod.explode_mods()
+		enabled_mods = self.get_enabled_mods()
+
+		# Append the incoming mods to the list of enabled mods, the parser will handle duplicates.
+		self.rebuild_mods(enabled_mods + mods)
+		return True
+
+	def remove_mod(self, mod: 'GameMod') -> bool:
+		"""
+		Remove a mod
+
+		Will completely uninstall the requested mod
+
+		:param mod:
+		:return:
+		"""
+		new_mods = []
+		enabled_mods = self.get_enabled_mods()
+		for enabled_mod in enabled_mods:
+			if isinstance(mod.id, int):
+				# Incoming mod to remove is a Steam mod; it may match multiple PZ mods
+				if enabled_mod.workshop_id != mod.id:
+					new_mods.append(enabled_mod)
+			else:
+				# Incoming mod is a single PZ mod.
+				if enabled_mod.id != mod.id:
+					new_mods.append(enabled_mod)
+		self.rebuild_mods(new_mods)
+		return True
 
 
 if __name__ == '__main__':

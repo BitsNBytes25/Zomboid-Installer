@@ -744,12 +744,15 @@ function install_ufw() {
 # Expects the following variables:
 #   GAME_USER    - User account to install the game under
 #   GAME_DIR     - Directory to install the game into
+#   WARLOCK_GUID - Warlock GUID for this game
 #
 # @param $1 Application Repo Name (e.g., user/repo)
 # @param $2 Application Branch Name (default: main)
 # @param $3 Warlock Manager Branch to use (default: release-v2)
 #
 # CHANGELOG:
+#   20260326 - Add support for full version strings
+#   20260325 - Update to install warlock-manager from PyPI if a version number is specified instead of a branch name
 #   20260319 - Add third option to specify the version of Warlock Manager to use as the base
 #   20260301 - Update to install warlock-manager from github (along with its dependencies) as a pip package
 #
@@ -766,6 +769,21 @@ function install_warlock_manager() {
 	local BRANCH="${2:-main}"
 	# Branch of Warlock Manager to install (default: release-v2)
 	local MANAGER_BRANCH="${3:-release-v2}"
+	local MANAGER_SOURCE
+	local MANAGER_SHA
+
+	if [[ "$MANAGER_BRANCH" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+		# Support 1.2.3 version strings; indicates at least .3 of the revision.
+		MANAGER_SOURCE="pip"
+		MANAGER_BRANCH=">=${MANAGER_BRANCH},<=$(echo $MANAGER_BRANCH | sed 's:\.[0-9]*$:.9999:')"
+	elif [[ "$MANAGER_BRANCH" =~ ^[0-9]+\.[0-9]+$ ]]; then
+		# Support 1.2 version strings; indicates it just must be within this API version
+        MANAGER_SOURCE="pip"
+        MANAGER_BRANCH=">=${MANAGER_BRANCH}.0,<=${MANAGER_BRANCH}.9999"
+    else
+    	# Not a version string, probably a branch name instead.
+        MANAGER_SOURCE="github"
+    fi
 
 	SRC="https://raw.githubusercontent.com/${REPO}/refs/heads/${BRANCH}/dist/manage.py"
 
@@ -777,6 +795,26 @@ function install_warlock_manager() {
 	chown $GAME_USER:$GAME_USER "$GAME_DIR/manage.py"
 	chmod +x "$GAME_DIR/manage.py"
 
+	# Record the hash of the install and branch name for display in the management UI and checking for updates.
+	# We use the direct hash because installation scripts may not necessarily use tagged versions.
+	MANAGER_SHA="$(curl -s "https://api.github.com/repos/${REPO}/commits/${BRANCH}" \
+        | grep '"sha":' \
+        | head -n 1 \
+        | sed -E 's/.*"sha": *"([^"]+)".*/\1/')"
+
+	# Record this hash along with the branch into a file accessible by the manager.
+	# This will be read by the Python, so JSON is fine.
+	cat > "$GAME_DIR/.manage.json" <<EOF
+{
+	"source": "github",
+	"repo": "${REPO}",
+	"branch": "${BRANCH}",
+	"commit": "${MANAGER_SHA}",
+	"game": "${WARLOCK_GUID}"
+}
+EOF
+	chown $GAME_USER:$GAME_USER "$GAME_DIR/.manage.json"
+
 	# Install configuration definitions
 	cat > "$GAME_DIR/configs.yaml" <<EOF
 manager:
@@ -786,90 +824,105 @@ manager:
     type: str
     default: public
     help: "The Steam branch to install the server from (e.g., stable, experimental)."
+    group: Settings
   - name: Steam Branch Password
     section: Steam
     key: steam_branch_password
     type: str
     default: ""
     help: "The password for accessing a private Steam branch, if applicable."
+    group: Settings
   - name: Shutdown Warning Delayed
     key: shutdown_delayed
     section: Messages
     type: str
     default: Server shutdown in {time} minutes.
     help: "Custom message broadcasted to players for delayed shutdowns, use {time} to be replaced with number of minutes"
+    group: Messages
   - name: Restart Warning Delayed
     key: restart_delayed
     section: Messages
     type: str
     default: Server restart in {time} minutes.
     help: "Custom message broadcasted to players for delayed restarts, use {time} to be replaced with number of minutes"
+    group: Messages
   - name: Shutdown Warning 5 Minutes
     section: Messages
     key: shutdown_5min
     type: str
     default: Server is shutting down in 5 minutes
     help: "Custom message broadcasted to players 5 minutes before server shutdown."
+    group: Messages
   - name: Shutdown Warning 4 Minutes
     section: Messages
     key: shutdown_4min
     type: str
     default: Server is shutting down in 4 minutes
     help: "Custom message broadcasted to players 4 minutes before server shutdown."
+    group: Messages
   - name: Shutdown Warning 3 Minutes
     section: Messages
     key: shutdown_3min
     type: str
     default: Server is shutting down in 3 minutes
     help: "Custom message broadcasted to players 3 minutes before server shutdown."
+    group: Messages
   - name: Shutdown Warning 2 Minutes
     section: Messages
     key: shutdown_2min
     type: str
     default: Server is shutting down in 2 minutes
     help: "Custom message broadcasted to players 2 minutes before server shutdown."
+    group: Messages
   - name: Shutdown Warning 1 Minute
     section: Messages
     key: shutdown_1min
     type: str
     default: Server is shutting down in 1 minute
     help: "Custom message broadcasted to players 1 minute before server shutdown."
+    group: Messages
   - name: Shutdown Warning 30 Seconds
     section: Messages
     key: shutdown_30sec
     type: str
     default: Server is shutting down in 30 seconds!
     help: "Custom message broadcasted to players 30 seconds before server shutdown."
+    group: Messages
   - name: Shutdown Warning NOW
     section: Messages
     key: shutdown_now
     type: str
     default: Server is shutting down NOW!
     help: "Custom message broadcasted to players immediately before server shutdown."
+    group: Messages
   - name: Instance Started (Discord)
     section: Discord
     key: instance_started
     type: str
     default: "{instance} has started! :rocket:"
     help: "Custom message sent to Discord when the server starts, use '{instance}' to insert the map name"
+    group: Discord
   - name: Instance Stopping (Discord)
     section: Discord
     key: instance_stopping
     type: str
     default: ":small_red_triangle_down: {instance} is shutting down"
     help: "Custom message sent to Discord when the server stops, use '{instance}' to insert the map name"
+    group: Discord
   - name: Discord Enabled
     section: Discord
     key: enabled
     type: bool
     default: false
     help: "Enables or disables Discord integration for server status updates."
+    group: Discord
   - name: Discord Webhook URL
     section: Discord
     key: webhook
     type: str
     default: ""
     help: "The webhook URL for sending server status updates to a Discord channel."
+    group: Discord
 zomboid:
   - name: PVP
     key: PVP
@@ -1576,7 +1629,22 @@ EOF
 	# A python virtual environment is now required by Warlock-based managers.
 	sudo -u $GAME_USER python3 -m venv "$GAME_DIR/.venv"
 	sudo -u $GAME_USER "$GAME_DIR/.venv/bin/pip" install --upgrade pip
-	sudo -u $GAME_USER "$GAME_DIR/.venv/bin/pip" install warlock-manager@git+https://github.com/BitsNBytes25/Warlock-Manager.git@$MANAGER_BRANCH
+	if [ "$MANAGER_SOURCE" == "pip" ]; then
+		# Install from PyPI with version specifier
+		sudo -u $GAME_USER "$GAME_DIR/.venv/bin/pip" install "warlock-manager${MANAGER_BRANCH}"
+	else
+		# Install directly from GitHub
+		sudo -u $GAME_USER "$GAME_DIR/.venv/bin/pip" install warlock-manager@git+https://github.com/BitsNBytes25/Warlock-Manager.git@$MANAGER_BRANCH
+	fi
+
+	# Ensure warlock lib directory exists for supplemental data
+	[ -d "/var/lib/warlock" ] || mkdir -p "/var/lib/warlock"
+	[ -e /var/lib/warlock/.auth ] || touch /var/lib/warlock/.auth
+    # Ensure it's a valid 64-character hash
+    if [ "$(cat /var/lib/warlock/.auth | wc -c)" != "64" ]; then
+    	cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 64 | head -n 1 | tr -d '\n' > "/var/lib/warlock/.auth"
+    fi
+	[ -e "/var/lib/warlock/.email" ] || touch /var/lib/warlock/.email
 }
 
 
@@ -1707,7 +1775,7 @@ function install_application() {
 	install_steamcmd
 	
 	# Install the management script
-	install_warlock_manager "$REPO" "$BRANCH" "main"
+	install_warlock_manager "$REPO" "$BRANCH" "2.2.4"
 
 	# Install installer (this script) for uninstallation or manual work
 	download "https://raw.githubusercontent.com/${REPO}/refs/heads/${BRANCH}/dist/installer.sh" "$GAME_DIR/installer.sh"
@@ -1729,10 +1797,45 @@ function postinstall() {
 }
 
 ##
+# Upgrade logic for 1.0 to 2.2 to handle migration of ENV and overrides
+#
+function upgrade_application_1_0() {
+	local LEGACY_SERVICE="zomboid"
+	local SERVICE_PATH="/etc/systemd/system/${LEGACY_SERVICE}.service"
+
+	# Migrate existing service to new format
+	# This gets overwrote by the manager, but is needed to tell the system that the service is here.
+	if [ -e "${SERVICE_PATH}" ] && [ ! -e "$GAME_DIR/Environments" ]; then
+		sudo -u $GAME_USER mkdir -p "$GAME_DIR/Environments"
+		# Extract out current environment variables from the systemd file into their own dedicated file
+		egrep '^Environment' "${SERVICE_PATH}" | sed 's:^Environment=::' > "$GAME_DIR/Environments/${LEGACY_SERVICE}.env"
+		chown $GAME_USER:$GAME_USER "$GAME_DIR/Environments/${LEGACY_SERVICE}.env"
+		# Trim out those envs now that they're not longer required
+		cat "${SERVICE_PATH}" | egrep -v '^Environment=' > "${SERVICE_PATH}.new"
+		mv "${SERVICE_PATH}.new" "${SERVICE_PATH}"
+
+		if [ -e "${SERVICE_PATH}.d" ] && [ -e "${SERVICE_PATH}.d/override.conf" ]; then
+			# If there is an override, (used in version 1.0),
+			# grab the CLI and move it to a notes document so the operator can manually review it.
+			touch "$GAME_DIR/Notes.txt"
+			echo "    !! IMPORTANT - Service commands are now generated dynamically, " >> "$GAME_DIR/Notes.txt"
+			echo "    so please manually migrate the following CLI options to your game." >> "$GAME_DIR/Notes.txt"
+			echo "" >> "$GAME_DIR/Notes.txt"
+			egrep '^ExecStart=' "${SERVICE_PATH}.d/override.conf" >> "$GAME_DIR/Notes.txt"
+			chown $GAME_USER:$GAME_USER "$GAME_DIR/Notes.txt"
+			rm -fr "${SERVICE_PATH}.d/override.conf"
+			rm -fr "${SERVICE_PATH}.d"
+		fi
+	fi
+}
+
+##
 # Perform any steps necessary for upgrading an existing installation.
 #
 function upgrade_application() {
 	print_header "Existing installation detected, performing upgrade"
+
+	upgrade_application_1_0
 }
 
 ##
