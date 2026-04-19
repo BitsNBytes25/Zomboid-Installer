@@ -75,6 +75,9 @@ class GameMod(WarlockNexusMod):
 		"""
 
 		ret = []
+		# Sometimes a description contains the mod name multiple times.
+		mods = []
+		maps = []
 		for line in self.description.split('\n'):
 			line = line.strip()
 			if line.startswith('Mod ID: '):
@@ -86,14 +89,18 @@ class GameMod(WarlockNexusMod):
 					# Mods in 42+ technically require a backslash, but we can skip it here.
 					k = k[1:]
 				clone.id = 'mod:' + k
-				ret.append(clone)
+				if k not in mods:
+					mods.append(k)
+					ret.append(clone)
 			elif line.startswith('Map Folder: '):
 				# Map Folder: Some Map 123
 				clone = GameMod.from_dict(self.to_dict())
 				clone.workshop_id = int(self.id)
 				k = line[12:]
 				clone.id = 'map:' + k
-				ret.append(clone)
+				if k not in maps:
+					maps.append(k)
+					ret.append(clone)
 
 		return ret
 
@@ -109,7 +116,7 @@ class GameMod(WarlockNexusMod):
 		"""
 		# In this game, a mod requested by a string indicates it's already resolved locally.
 		# an int means it's coming directly from Steam.
-		if isinstance(mod_id, int):
+		if isinstance(mod_id, int) or (isinstance(mod_id, str) and mod_id.isdigit()):
 			return super().get_mod(source, provider, mod_id)
 		else:
 			# Search through local mods
@@ -202,7 +209,7 @@ class GameService(SocketService):
 		"""
 		super().__init__(service, game)
 		self.configs = {
-			'zomboid': PropertiesConfig('zomboid', os.path.join(self.get_app_directory(), 'Server/servertest.ini'))
+			'zomboid': PropertiesConfig('zomboid', os.path.join(utils.get_app_directory(), 'Server/servertest.ini'))
 		}
 		self.load()
 
@@ -497,9 +504,13 @@ class GameService(SocketService):
 		raw_mods = []
 		workshop_ids = workshop_ids.split(';')
 		for workshop_id in workshop_ids:
-			mod = GameMod.get_mod(self, 'steam', workshop_id)
-			for sub_mod in mod.explode_mods():
-				raw_mods.append(sub_mod)
+			mod = GameMod.get_mod(self, 'steam', int(workshop_id))
+			if mod is None:
+				logging.warning('Could not find mod with workshop ID %s' % workshop_id)
+				continue
+			else:
+				for sub_mod in mod.explode_mods():
+					raw_mods.append(sub_mod)
 		# raw_mods now contains all the available Mod Names and Map Names across workshop items installed
 
 		ret = []
@@ -516,7 +527,7 @@ class GameService(SocketService):
 					if raw_mod.id == 'mod:' + mod_name:
 						ret.append(raw_mod)
 
-		opt = self.get_option_value('Map Names')
+		opt = self.get_option_value('Mod Maps')
 		if opt != '' and opt is not None:
 			maps = opt.split(';')
 			for map_name in maps:
@@ -535,7 +546,7 @@ class GameService(SocketService):
 		:param mods:
 		:return:
 		"""
-		current_maps = self.get_option_value('Map Names').split(';')
+		current_maps = self.get_option_value('Mod Maps').split(';')
 		use_default_map = 'Muldraugh, KY' in current_maps
 
 		new_mods = []
@@ -545,6 +556,7 @@ class GameService(SocketService):
 			mod.register()
 			mod_type = mod.id[0:3]
 			mod_key = mod.id[4:]
+			workshop_id = str(mod.workshop_id)
 
 			if mod_type == 'mod' and not mod_key.startswith('\\'):
 				# B42+ requires mods to start with a backslash.
@@ -553,12 +565,14 @@ class GameService(SocketService):
 			if mod_type == 'map' and mod_key not in new_maps:
 				# This is a map; add it to the list of maps to install.
 				new_maps.append(mod_key)
+
 			if mod_type == 'mod' and mod_key not in new_mods:
 				# This is a mod; add it to the list of mods to install.
 				new_mods.append(mod_key)
-			if mod.workshop_id not in new_ids:
+
+			if workshop_id not in new_ids:
 				# Every mod will have a Workshop ID, (which may be duplicated if a mod has multiple mods)
-				new_ids.append(mod.workshop_id)
+				new_ids.append(workshop_id)
 
 		if use_default_map:
 			new_maps.append('Muldraugh, KY')
@@ -566,7 +580,7 @@ class GameService(SocketService):
 		# Save everything back to the game config.
 		self.set_option('Mod Names', ';'.join(new_mods))
 		self.set_option('Mod Workshop IDs', ';'.join(new_ids))
-		self.set_option('Map Names', ';'.join(new_maps))
+		self.set_option('Mod Maps', ';'.join(new_maps))
 
 	def add_mod(self, mod: 'GameMod', force: bool = False) -> bool:
 		"""
@@ -596,7 +610,7 @@ class GameService(SocketService):
 		new_mods = []
 		enabled_mods = self.get_enabled_mods()
 		for enabled_mod in enabled_mods:
-			if isinstance(mod.id, int):
+			if isinstance(mod.id, int) or (isinstance(mod.id, str) and mod.id.isdigit()):
 				# Incoming mod to remove is a Steam mod; it may match multiple PZ mods
 				if enabled_mod.workshop_id != mod.id:
 					new_mods.append(enabled_mod)
