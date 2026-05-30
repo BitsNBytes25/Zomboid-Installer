@@ -15,7 +15,6 @@ sys.path.insert(
 		'python' + '.'.join(sys.version.split('.')[:2]), 'site-packages'
 	)
 )
-import logging
 import random
 import string
 from warlock_manager.apps.steam_app import SteamApp
@@ -23,6 +22,7 @@ from warlock_manager.services.socket_service import SocketService
 from warlock_manager.config.ini_config import INIConfig
 from warlock_manager.config.properties_config import PropertiesConfig
 from warlock_manager.libs.app_runner import app_runner
+from warlock_manager.libs.logger import logger
 from warlock_manager.libs.firewall import Firewall
 from warlock_manager.libs import utils
 from warlock_manager.mods.warlock_nexus_mod import WarlockNexusMod
@@ -156,7 +156,7 @@ class GameApp(SteamApp):
 		self.disabled_features = {'create_service'}
 
 		self.configs = {
-			'manager': INIConfig('manager', os.path.join(utils.get_app_directory(), '.settings.ini'))
+			'manager': INIConfig('manager', os.path.join(utils.get_base_directory(), '.settings.ini'))
 		}
 		self.load()
 
@@ -167,7 +167,7 @@ class GameApp(SteamApp):
 		:return:
 		"""
 		if os.geteuid() != 0:
-			logging.error('Please run this script with sudo to perform first-run configuration.')
+			logger.error('Please run this script with sudo to perform first-run configuration.')
 			return False
 
 		super().first_run()
@@ -176,17 +176,17 @@ class GameApp(SteamApp):
 		# It's a good idea to ensure the game is installed on first run.
 		self.update()
 
-		utils.makedirs(os.path.join(utils.get_app_directory(), 'mods'))
+		utils.makedirs(os.path.join(utils.get_base_directory(), 'mods'))
 
 		# First run is a great time to auto-create some services for this game too
 		services = self.get_services()
 		if len(services) == 0:
 			# No services detected, create one.
-			logging.info('No services detected, creating one...')
+			logger.info('No services detected, creating one...')
 			self.create_service('zomboid-server')
 		else:
 			for service in services:
-				logging.info('Ensuring %s service file is on latest format' % service.service)
+				logger.info('Ensuring %s service file is on latest format' % service.service)
 				service.build_systemd_config()
 				service.reload()
 
@@ -222,7 +222,7 @@ class GameService(SocketService):
 		"""
 		super().__init__(service, game)
 		self.configs = {
-			'zomboid': PropertiesConfig('zomboid', os.path.join(utils.get_app_directory(), 'Server/servertest.ini'))
+			'zomboid': PropertiesConfig('zomboid', os.path.join(utils.get_home_directory(), 'Zomboid/Server/servertest.ini'))
 		}
 		self.load()
 
@@ -248,7 +248,7 @@ class GameService(SocketService):
 
 		return {
 			'XDG_RUNTIME_DIR': '/run/user/%s' % utils.get_app_uid(),
-			'PATH': f'${game_dir}/jre64/bin:/usr/bin:/bin',
+			'PATH': f'{game_dir}/jre64/bin:/usr/bin:/bin',
 			'LD_LIBRARY_PATH': ':'.join(include_paths),
 			'LD_PRELOAD': 'libjsig.so'
 		}
@@ -438,39 +438,51 @@ class GameService(SocketService):
 				f.write(random_password)
 			utils.ensure_file_ownership(os.path.join(self.get_app_directory(), 'admin.passwd'))
 
-		logging.debug('Checking for first-run password prompt...')
-		password_asked = False
+		logger.debug('Checking for first-run password prompt...')
+		password_asked1 = False
+		password_asked2 = False
 
 		def watch1(line):
 			nonlocal random_password
-			nonlocal password_asked
+			nonlocal password_asked1
 			if 'Initialising Server Systems' in line:
 				# Generally indicates the server has started and is in the final steps of loading.
-				logging.debug('Server initialization started, dropping out of password check')
+				logger.debug('Server initialization started, dropping out of password check')
 				return False
 			if 'Enter new administrator password:' in line:
 				# Password asked in the terminal; send it via cmd
-				password_asked = True
-				logging.debug('Server asked for password once!  Sending password.')
+				password_asked1 = True
+				logger.debug('Server asked for password once!  Sending password.')
 				self.write_socket(random_password)
 				return False
 
 
 		def watch2(line):
 			nonlocal random_password
+			nonlocal password_asked2
 			if 'Initialising Server Systems' in line:
 				# Generally indicates the server has started and is in the final steps of loading.
-				logging.debug('Server initialization started, dropping out of password check')
+				logger.debug('Server initialization started, dropping out of password check')
 				return False
 			if 'Confirm the password:' in line:
 				# Password confirmation asked in the terminal; send it via cmd
-				logging.debug('Server asked for password twice')
+				password_asked2 = True
+				logger.debug('Server asked for password twice')
 				self.write_socket(random_password)
 				return False
 
 		self.watch(watch1, 60)
-		if password_asked:
+		if password_asked1:
 			self.watch(watch2)
+
+		if password_asked1:
+			if password_asked2:
+				logger.info('First-run password prompt completed successfully')
+			else:
+				logger.error('First-run password prompt failed!')
+				return False
+		else:
+			logger.info('First-run password prompt not detected, continuing with startup')
 
 		return super().post_start()
 
@@ -519,7 +531,7 @@ class GameService(SocketService):
 		for workshop_id in workshop_ids:
 			mod = GameMod.get_mod(self, 'steam', int(workshop_id))
 			if mod is None:
-				logging.warning('Could not find mod with workshop ID %s' % workshop_id)
+				logger.warning('Could not find mod with workshop ID %s' % workshop_id)
 				continue
 			else:
 				for sub_mod in mod.explode_mods():

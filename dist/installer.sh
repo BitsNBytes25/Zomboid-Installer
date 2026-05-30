@@ -473,6 +473,83 @@ function package_install (){
 		exit 1
 	fi
 }
+##
+# log helper by eval.bz
+#
+# Facilitates a basic logging system for Bash to print messages to stderr
+#
+# Using:
+#
+# Include this file (or however your import system works)
+# # scriptlet: bz_eval_log/log.sh
+#
+# Change logging level
+# LOG_LEVEL=3 - Set logging level to DEBUG so all messages are displayed
+# LOG_LEVEL=2 - (DEFAULT) - Set logging to info, warnings, and errors
+# LOG_LEVEL=1 - Only display warnings and errors
+# LOG_LEVEL=0 - Only display errors
+#
+# Disable coloration
+# By default this script renders messages with colors.  Disable this with the following
+# LOG_COLORS=0
+#
+# Logging messages
+# log_debug "This is a debug statement"
+# log_info "This is an informational statement"
+# log_warning "This is a warning message"
+# log_error "This is an error message"
+#
+
+# Set the verbosity level: 0=ERROR, 1=WARN, 2=INFO, 3=DEBUG
+LOG_LEVEL=${LOG_LEVEL:-2}
+
+# Set to '0' to disable ANSI colors
+LOG_COLORS=1
+
+# ANSI Color Codes
+LOG_RED='\033[0;31m'
+LOG_GREEN='\033[0;32m'
+LOG_YELLOW='\033[1;33m'
+LOG_BLUE='\033[0;34m'
+LOG_NC='\033[0m' # No Color
+
+##
+# Print a header message
+#
+# CHANGELOG:
+#   2026.04.30 - Initial version
+#
+function bz_eval_log() {
+    local level_name="$1"
+    local color
+    local message="$2"
+    local numeric_level=0
+
+    # Map level names to numbers for comparison
+    case "${level_name^^}" in
+        "ERROR") numeric_level=0; color="$LOG_RED" ;;
+        "WARN")  numeric_level=1; color="$LOG_YELLOW" ;;
+        "INFO")  numeric_level=2; color="" ;;
+        "DEBUG") numeric_level=3; color="$LOG_BLUE" ;;
+    esac
+
+    # Only print if the current log level is high enough
+    if [ "$numeric_level" -le "$LOG_LEVEL" ]; then
+        local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+        # Print to stderr (&2)
+        if [ $LOG_COLORS -eq 1 ] && [ "$color" != "" ]; then
+        	printf "${color}[%s] [%s] %s${LOG_NC}\n" "$timestamp" "$level_name" "$message" >&2
+		else
+        	printf "[%s] [%s] %s\n" "$timestamp" "$level_name" "$message" >&2
+        fi
+    fi
+}
+
+# Helper wrappers for convenience
+function log_error()   { bz_eval_log "ERROR" "$1"; }
+function log_warning() { bz_eval_log "WARN"  "$1"; }
+function log_info()    { bz_eval_log "INFO"  "$1"; }
+function log_debug()   { bz_eval_log "DEBUG" "$1"; }
 
 ##
 # Simple download utility function
@@ -488,6 +565,8 @@ function package_install (){
 #   --no-overwrite       Skip download if destination file already exists
 #
 # CHANGELOG:
+#   2026.04.30 - Use logging with new logging interface
+#   2026.04.21 - Add retry in curl to retry on connection issues, (looking at you Github)
 #   2025.12.15 - Use cmd_exists to fix regression bug
 #   2025.12.04 - Add --no-overwrite option to allow skipping download if the destination file exists
 #   2025.11.23 - Download to a temp location to verify download was successful
@@ -512,33 +591,37 @@ function download() {
     	done
 
 	if [ -z "$SOURCE" ] || [ -z "$DESTINATION" ]; then
-		echo "download: Missing required parameters!" >&2
+		log_error "download: Missing required parameters!"
 		return 1
 	fi
 
 	if [ -f "$DESTINATION" ] && [ $OVERWRITE -eq 0 ]; then
-		echo "download: Destination file $DESTINATION already exists, skipping download." >&2
+		log_info "download: Destination file $DESTINATION already exists, skipping download."
 		return 0
 	fi
 
 	if cmd_exists curl; then
-		if curl -fsL "$SOURCE" -o "$TMP"; then
+		log_debug "download: Attempting to curl download $SOURCE"
+		if curl --connect-timeout 10 --retry 3 --retry-delay 10 -fsL "$SOURCE" -o "$TMP"; then
+			log_debug "download: Download successful, moving file to $DESTINATION"
 			mv $TMP "$DESTINATION"
 			return 0
 		else
-			echo "download: curl failed to download $SOURCE" >&2
+			log_error "download: curl failed to download $SOURCE"
 			return 1
 		fi
 	elif cmd_exists wget; then
+		log_debug "download: Attempting to wget download $SOURCE"
 		if wget -q "$SOURCE" -O "$TMP"; then
+			log_debug "download: Download successful, moving file to $DESTINATION"
 			mv $TMP "$DESTINATION"
 			return 0
 		else
-			echo "download: wget failed to download $SOURCE" >&2
+			log_error "download: wget failed to download $SOURCE"
 			return 1
 		fi
 	else
-		echo "download: Neither curl nor wget is installed, cannot download!" >&2
+		log_error "download: Neither curl nor wget is installed, cannot download!"
 		return 1
 	fi
 }
@@ -738,6 +821,7 @@ function install_ufw() {
 		ufw allow from $TTY_IP comment 'Anti-lockout rule based on first install of UFW'
 	fi
 }
+
 ##
 # Install the management script from the project's repo
 #
@@ -751,6 +835,8 @@ function install_ufw() {
 # @param $3 Warlock Manager Branch to use (default: release-v2)
 #
 # CHANGELOG:
+#   20260430 - Install git if pip source is github
+#            - Return an exit code of 0 if successful, 1 otherwise
 #   20260326 - Add support for full version strings
 #   20260325 - Update to install warlock-manager from PyPI if a version number is specified instead of a branch name
 #   20260319 - Add third option to specify the version of Warlock Manager to use as the base
@@ -788,8 +874,8 @@ function install_warlock_manager() {
 	SRC="https://raw.githubusercontent.com/${REPO}/refs/heads/${BRANCH}/dist/manage.py"
 
 	if ! download "$SRC" "$GAME_DIR/manage.py"; then
-		echo "Could not download management script!" >&2
-		exit 1
+		log_error "Could not download management script!"
+		return 1
 	fi
 
 	chown $GAME_USER:$GAME_USER "$GAME_DIR/manage.py"
@@ -1627,14 +1713,26 @@ EOF
 	chown $GAME_USER:$GAME_USER "$GAME_DIR/.settings.ini"
 
 	# A python virtual environment is now required by Warlock-based managers.
-	sudo -u $GAME_USER python3 -m venv "$GAME_DIR/.venv"
+	if ! sudo -u $GAME_USER python3 -m venv "$GAME_DIR/.venv"; then
+		log_error "Could not set up virtual environment in $GAME_DIR/.venv!"
+		return 1
+	fi
+
 	sudo -u $GAME_USER "$GAME_DIR/.venv/bin/pip" install --upgrade pip
+
 	if [ "$MANAGER_SOURCE" == "pip" ]; then
 		# Install from PyPI with version specifier
-		sudo -u $GAME_USER "$GAME_DIR/.venv/bin/pip" install "warlock-manager${MANAGER_BRANCH}"
+		if ! sudo -u $GAME_USER "$GAME_DIR/.venv/bin/pip" install "warlock-manager${MANAGER_BRANCH}"; then
+			log_error "Could not install warlock-manager${MANAGER_BRANCH} from pip!"
+			return 1
+		fi
 	else
 		# Install directly from GitHub
-		sudo -u $GAME_USER "$GAME_DIR/.venv/bin/pip" install warlock-manager@git+https://github.com/BitsNBytes25/Warlock-Manager.git@$MANAGER_BRANCH
+		package_install git
+		if ! sudo -u $GAME_USER "$GAME_DIR/.venv/bin/pip" install warlock-manager@git+https://github.com/BitsNBytes25/Warlock-Manager.git@$MANAGER_BRANCH; then
+			log_error "Could not install warlock-manager from git branch $MANAGER_BRANCH!"
+			return 1
+		fi
 	fi
 
 	# Ensure warlock lib directory exists for supplemental data
@@ -1645,6 +1743,8 @@ EOF
     	cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 64 | head -n 1 | tr -d '\n' > "/var/lib/warlock/.auth"
     fi
 	[ -e "/var/lib/warlock/.email" ] || touch /var/lib/warlock/.email
+
+	return 0
 }
 
 
@@ -1775,7 +1875,7 @@ function install_application() {
 	install_steamcmd
 	
 	# Install the management script
-	install_warlock_manager "$REPO" "$BRANCH" "2.2.4"
+	install_warlock_manager "$REPO" "$BRANCH" "2.2.14"
 
 	# Install installer (this script) for uninstallation or manual work
 	download "https://raw.githubusercontent.com/${REPO}/refs/heads/${BRANCH}/dist/installer.sh" "$GAME_DIR/installer.sh"
